@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sala de Projeção</title>
+<style>
+  :root{
+    --curtain: #2b0f12;
+    --curtain-deep: #1a0708;
+    --velvet: #6e1423;
+    --gold: #c9a24b;
+    --gold-bright: #e6c874;
+    --cream: #f2e9d8;
+    --stage: #0c0c0e;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    margin: 0;
+  }
+
+  body{
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+    background:
+      radial-gradient(ellipse at top, #3a1216 0%, var(--curtain) 45%, var(--curtain-deep) 100%);
+    color: var(--cream);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 60px;
+    overflow-x: hidden;
+  }
+
+  /* textura de veludo sutil via listras verticais */
+  body::before{
+    content:"";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: repeating-linear-gradient(
+      90deg,
+      rgba(0,0,0,0.12) 0px,
+      rgba(0,0,0,0.12) 2px,
+      transparent 2px,
+      transparent 26px
+    );
+    opacity: 0.5;
+    z-index: 0;
+  }
+
+  header{
+    text-align: center;
+    margin-bottom: 28px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .eyebrow{
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    font-size: 11px;
+    color: var(--gold);
+    font-family: 'Futura', 'Century Gothic', sans-serif;
+    margin-bottom: 10px;
+  }
+
+  h1{
+    font-size: clamp(28px, 5vw, 44px);
+    margin: 0;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    color: var(--gold-bright);
+    text-shadow: 0 2px 18px rgba(230,200,116,0.25);
+  }
+
+  h1 em{
+    font-style: italic;
+    color: var(--cream);
+  }
+
+  .subtitle-tag{
+    margin-top: 10px;
+    font-size: 14px;
+    color: rgba(242,233,216,0.6);
+    font-style: italic;
+  }
+
+  main{
+    width: 100%;
+    max-width: 960px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .controls{
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 22px;
+  }
+
+  .file-btn{
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(180deg, #3a1519, #260c10);
+    border: 1px solid rgba(201,162,75,0.4);
+    color: var(--cream);
+    padding: 12px 20px;
+    border-radius: 3px;
+    font-family: 'Futura', 'Century Gothic', sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color .2s ease, background .2s ease, transform .15s ease;
+  }
+  .file-btn:hover{
+    border-color: var(--gold-bright);
+    background: linear-gradient(180deg, #45191e, #2c0e12);
+    transform: translateY(-1px);
+  }
+  .file-btn.loaded{
+    border-color: var(--gold);
+    color: var(--gold-bright);
+  }
+  .file-btn input{
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .file-btn .status-dot{
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(242,233,216,0.3);
+    flex: none;
+  }
+  .file-btn.loaded .status-dot{
+    background: var(--gold-bright);
+    box-shadow: 0 0 6px var(--gold-bright);
+  }
+
+  .stage-frame{
+    background: var(--stage);
+    border-radius: 4px;
+    padding: 10px;
+    border: 1px solid rgba(201,162,75,0.25);
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.6),
+      0 30px 60px -20px rgba(0,0,0,0.7),
+      inset 0 0 40px rgba(0,0,0,0.5);
+  }
+
+  .video-wrap{
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 2px;
+  }
+
+  video{
+    width: 100%;
+    height: 100%;
+    background: #000;
+    display: block;
+  }
+
+  .placeholder{
+    text-align: center;
+    color: rgba(242,233,216,0.35);
+    font-style: italic;
+    font-size: 15px;
+    padding: 20px;
+    line-height: 1.7;
+  }
+  .placeholder .curtain-icon{
+    font-size: 34px;
+    display: block;
+    margin-bottom: 10px;
+    opacity: 0.5;
+  }
+
+  video::cue{
+    background: rgba(0,0,0,0.55);
+    color: #f2e9d8;
+    font-family: 'Iowan Old Style', Georgia, serif;
+    font-size: 1.05em;
+    padding: 0.15em 0.3em;
+  }
+
+  .meta-row{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    font-size: 12px;
+    color: rgba(242,233,216,0.45);
+    font-family: 'Futura', 'Century Gothic', sans-serif;
+    letter-spacing: 0.05em;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .legend-toggle{
+    background: none;
+    border: 1px solid rgba(201,162,75,0.35);
+    color: rgba(242,233,216,0.7);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-family: 'Futura', 'Century Gothic', sans-serif;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all .2s ease;
+  }
+  .legend-toggle:hover{
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+  }
+  .legend-toggle.off{
+    opacity: 0.5;
+  }
+
+  footer{
+    margin-top: 30px;
+    font-size: 12px;
+    color: rgba(242,233,216,0.3);
+    text-align: center;
+    position: relative;
+    z-index: 1;
+    line-height: 1.6;
+    max-width: 500px;
+  }
+
+  @media (prefers-reduced-motion: no-preference){
+    .file-btn, .legend-toggle { transition-duration: .2s; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Sessão privada</div>
+  <h1>Sala de <em>Projeção</em></h1>
+  <div class="subtitle-tag">para rever o que já foi encenado</div>
+</header>
+
+<main>
+  <div class="controls">
+    <label class="file-btn" id="btnVideo">
+      <span class="status-dot"></span>
+      <span id="labelVideo">Escolher filme (vídeo)</span>
+      <input type="file" id="inputVideo" accept="video/*">
+    </label>
+    <label class="file-btn" id="btnSrt">
+      <span class="status-dot"></span>
+      <span id="labelSrt">Escolher legenda (.srt)</span>
+      <input type="file" id="inputSrt" accept=".srt,.txt">
+    </label>
+  </div>
+
+  <div class="stage-frame">
+    <div class="video-wrap" id="videoWrap">
+      <div class="placeholder" id="placeholder">
+        <span class="curtain-icon">🎭</span>
+        Escolha o arquivo de vídeo para começar.<br>
+        A legenda em .srt é opcional e pode ser carregada antes ou depois.
+      </div>
+      <video id="player" controls playsinline style="display:none;"></video>
+    </div>
+  </div>
+
+  <div class="meta-row">
+    <span id="metaInfo">Nenhum arquivo carregado</span>
+    <button class="legend-toggle off" id="toggleLegend" disabled>Legendas: —</button>
+  </div>
+</main>
+
+<footer>
+  Os arquivos são lidos diretamente do seu computador, no seu navegador.
+  Nada é enviado para nenhum servidor.
+</footer>
+
+<script>
+(function(){
+  const inputVideo = document.getElementById('inputVideo');
+  const inputSrt = document.getElementById('inputSrt');
+  const btnVideo = document.getElementById('btnVideo');
+  const btnSrt = document.getElementById('btnSrt');
+  const labelVideo = document.getElementById('labelVideo');
+  const labelSrt = document.getElementById('labelSrt');
+  const player = document.getElementById('player');
+  const placeholder = document.getElementById('placeholder');
+  const metaInfo = document.getElementById('metaInfo');
+  const toggleLegend = document.getElementById('toggleLegend');
+
+  let currentTrackUrl = null;
+
+  // --- Conversão SRT -> WebVTT ---
+  function srtTimeToVtt(t){
+    // 00:00:20,000  ->  00:00:20.000
+    return t.trim().replace(',', '.');
+  }
+
+  function srtToVtt(srtText){
+    // Normaliza quebras de linha
+    let text = srtText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+
+    // Divide em blocos por linha em branco
+    const blocks = text.split(/\n\s*\n/);
+    let vtt = 'WEBVTT\n\n';
+
+    blocks.forEach(block => {
+      const lines = block.split('\n').filter(l => l.length > 0 || l === '');
+      if (lines.length < 2) return;
+
+      // Acha a linha de tempo (contém "-->")
+      let timeLineIndex = lines.findIndex(l => l.includes('-->'));
+      if (timeLineIndex === -1) return;
+
+      const timeLine = lines[timeLineIndex]
+        .split('-->')
+        .map(s => srtTimeToVtt(s.trim().split(' ')[0]))
+        .join(' --> ');
+
+      const textLines = lines.slice(timeLineIndex + 1);
+      if (textLines.length === 0) return;
+
+      vtt += timeLine + '\n' + textLines.join('\n') + '\n\n';
+    });
+
+    return vtt;
+  }
+
+  function setLoaded(btn, label, filename){
+    btn.classList.add('loaded');
+    label.textContent = filename;
+  }
+
+  function updateMeta(){
+    const parts = [];
+    if (player.dataset.videoName) parts.push('Filme: ' + player.dataset.videoName);
+    if (player.dataset.srtName) parts.push('Legenda: ' + player.dataset.srtName);
+    metaInfo.textContent = parts.length ? parts.join(' · ') : 'Nenhum arquivo carregado';
+  }
+
+  inputVideo.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const url = URL.createObjectURL(file);
+    player.src = url;
+    player.style.display = 'block';
+    placeholder.style.display = 'none';
+    player.dataset.videoName = file.name;
+
+    setLoaded(btnVideo, labelVideo, file.name.length > 28 ? file.name.slice(0,25) + '…' : file.name);
+    updateMeta();
+  });
+
+  inputSrt.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const vttContent = srtToVtt(ev.target.result);
+      const blob = new Blob([vttContent], { type: 'text/vtt' });
+
+      if (currentTrackUrl) URL.revokeObjectURL(currentTrackUrl);
+      currentTrackUrl = URL.createObjectURL(blob);
+
+      // Remove faixa anterior, se houver
+      const oldTrack = player.querySelector('track');
+      if (oldTrack) oldTrack.remove();
+
+      const track = document.createElement('track');
+      track.kind = 'subtitles';
+      track.label = 'Português';
+      track.srclang = 'pt';
+      track.src = currentTrackUrl;
+      track.default = true;
+      player.appendChild(track);
+
+      // Ativa a exibição da legenda assim que carregar
+      player.addEventListener('loadedmetadata', () => {
+        if (player.textTracks[0]) player.textTracks[0].mode = 'showing';
+      }, { once: true });
+      if (player.textTracks[0]) player.textTracks[0].mode = 'showing';
+
+      player.dataset.srtName = file.name;
+      setLoaded(btnSrt, labelSrt, file.name.length > 28 ? file.name.slice(0,25) + '…' : file.name);
+      updateMeta();
+
+      toggleLegend.disabled = false;
+      toggleLegend.classList.remove('off');
+      toggleLegend.textContent = 'Legendas: ligadas';
+    };
+    reader.readAsText(file, 'utf-8');
+  });
+
+  toggleLegend.addEventListener('click', () => {
+    const track = player.textTracks[0];
+    if (!track) return;
+    if (track.mode === 'showing') {
+      track.mode = 'hidden';
+      toggleLegend.textContent = 'Legendas: desligadas';
+      toggleLegend.classList.add('off');
+    } else {
+      track.mode = 'showing';
+      toggleLegend.textContent = 'Legendas: ligadas';
+      toggleLegend.classList.remove('off');
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
