@@ -1,7 +1,7 @@
 (function(){
   // ======= PREENCHA AQUI COM SEUS DADOS DO SUPABASE =======
-  const SUPABASE_URL = "https://oedcetvgmzaxmpymqoxt.supabase.co";
-  const SUPABASE_ANON_KEY = "sb_publishable_Mfkjit2yj7W9S4a_T2ETAw_Q8gYJnoW";
+  const SUPABASE_URL = "https://eogugfwxbqcydonhnmnd.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_PvIiBvBCucOinjgC4biNlg_KBvjVOlS";
   // ==========================================================
 
   const player = document.getElementById('player');
