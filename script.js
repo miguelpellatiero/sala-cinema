@@ -309,6 +309,13 @@
       seatOther.classList.toggle('on', otherPresent);
       if (otherPresent) {
         setStatus('connected', 'Sala "' + code + '" — os dois estão aqui');
+        // Anfitrião: assim que detectar o outro na sala, (re)inicia a transmissão —
+        // não depende de quem entrou primeiro, nem de um pedido explícito do convidado.
+        if (currentMode === 'stream' && currentRole === 'host') {
+          if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'new') {
+            startHostOffer();
+          }
+        }
       } else {
         setStatus('waiting', 'Sala "' + code + '" — esperando a outra pessoa entrar');
       }
