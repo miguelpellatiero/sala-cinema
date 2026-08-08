@@ -229,7 +229,25 @@
     </div>
   </div>
 
-  <div class="controls">
+  <div class="room-panel" id="modePanel">
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+      <input type="radio" name="mode" value="each" checked> Cada um com o próprio arquivo
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+      <input type="radio" name="mode" value="stream"> Só uma pessoa tem o filme (transmite ao vivo)
+    </label>
+  </div>
+
+  <div class="room-panel hidden" id="rolePanel">
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+      <input type="radio" name="role" value="host" checked> Eu tenho o filme
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+      <input type="radio" name="role" value="guest"> Vou receber o filme da outra pessoa
+    </label>
+  </div>
+
+  <div class="controls" id="loaderControls">
     <label class="file-btn" id="btnVideo">
       <span id="labelVideo">Escolher filme (arquivo local)</span>
       <input type="file" id="inputVideo" accept="video/*">
@@ -253,11 +271,14 @@
     <span id="metaInfo">Nenhum vídeo carregado</span>
     <span id="driftInfo"></span>
   </div>
+  <div class="meta-row" id="streamStatusRow" style="display:none;">
+    <span id="streamStatus"></span>
+  </div>
 </main>
 
 <footer>
-  Cada pessoa precisa ter o mesmo filme, carregado localmente ou por um link direto.
-  O que é sincronizado é só o comando de play, pause e o ponto do vídeo — nenhum vídeo é enviado pela internet através deste site.
+  <strong>Cada um com o próprio arquivo:</strong> os dois precisam ter o mesmo filme salvo, e só o play/pause/tempo é sincronizado.<br>
+  <strong>Transmissão ao vivo:</strong> só quem escolher "Eu tenho o filme" precisa do arquivo — o vídeo é enviado direto pro navegador do outro (peer-to-peer), sem passar por nenhum servidor.
 </footer>
 
 </div><!-- fim appScreen -->
@@ -265,7 +286,7 @@
 <script>
 (function(){
   // ======= PREENCHA AQUI COM SEUS DADOS DO SUPABASE =======
-  const SUPABASE_URL = "https://eogugfwxbqcydonhnmnd.supabase.co";
+  const SUPABASE_URL = "https://oedcetvgmzaxmpymqoxt.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_PvIiBvBCucOinjgC4biNlg_KBvjVOlS";
   // ==========================================================
 
@@ -345,6 +366,43 @@
     if (data && data.session) showApp();
   })();
 
+  const modePanel = document.getElementById('modePanel');
+  const rolePanel = document.getElementById('rolePanel');
+  const loaderControls = document.getElementById('loaderControls');
+  const streamStatusRow = document.getElementById('streamStatusRow');
+  const streamStatus = document.getElementById('streamStatus');
+
+  let currentMode = 'each';
+  let currentRole = 'host';
+  let pc = null; // RTCPeerConnection
+  let hostVideoReady = false;
+  let pendingGuestRequest = false;
+  const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+  document.querySelectorAll('input[name="mode"]').forEach(r => {
+    r.addEventListener('change', () => {
+      currentMode = document.querySelector('input[name="mode"]:checked').value;
+      rolePanel.classList.toggle('hidden', currentMode !== 'stream');
+      updateLoaderVisibility();
+    });
+  });
+  document.querySelectorAll('input[name="role"]').forEach(r => {
+    r.addEventListener('change', () => {
+      currentRole = document.querySelector('input[name="role"]:checked').value;
+      updateLoaderVisibility();
+    });
+  });
+
+  function updateLoaderVisibility(){
+    const showLoader = currentMode === 'each' || (currentMode === 'stream' && currentRole === 'host');
+    loaderControls.classList.toggle('hidden', !showLoader);
+    streamStatusRow.style.display = currentMode === 'stream' ? 'flex' : 'none';
+    if (currentMode === 'stream' && currentRole === 'guest') {
+      placeholder.innerHTML = '<span class="curtain-icon">🎬</span>Aguardando a transmissão da outra pessoa…';
+      placeholder.style.display = player.style.display === 'block' ? 'none' : 'block';
+    }
+  }
+
   function setStatus(state, text){
     statusDot.className = 'status-dot' + (state ? ' ' + state : '');
     statusText.textContent = text;
@@ -356,6 +414,14 @@
     placeholder.style.display = 'none';
     metaInfo.textContent = 'Filme: ' + label;
   }
+
+  player.addEventListener('loadedmetadata', () => {
+    if (currentMode === 'stream' && currentRole === 'host') {
+      hostVideoReady = true;
+      player.play().catch(()=>{});
+      if (pendingGuestRequest) startHostOffer();
+    }
+  });
 
   inputVideo.addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -388,18 +454,19 @@
     });
   }
 
-  // Envia comandos quando EU controlo o vídeo (não quando é aplicação remota)
-  player.addEventListener('play', () => { if (!suppressEvents) sendState('play'); });
-  player.addEventListener('pause', () => { if (!suppressEvents) sendState('pause'); });
-  player.addEventListener('seeked', () => { if (!suppressEvents) sendState('seek'); });
+  // Envia comandos quando EU controlo o vídeo (não quando é aplicação remota) — só no modo "cada um com o próprio arquivo"
+  player.addEventListener('play', () => { if (!suppressEvents && currentMode === 'each') sendState('play'); });
+  player.addEventListener('pause', () => { if (!suppressEvents && currentMode === 'each') sendState('pause'); });
+  player.addEventListener('seeked', () => { if (!suppressEvents && currentMode === 'each') sendState('seek'); });
 
   // Heartbeat leve pra quem entra depois se ajustar, e corrigir deriva de tempo
   setInterval(() => {
-    if (!channel || player.paused || !player.src) return;
+    if (currentMode !== 'each' || !channel || player.paused || !player.src) return;
     sendState('heartbeat');
   }, 4000);
 
   function applyRemote(payload){
+    if (currentMode !== 'each') return;
     if (payload.from === myId) return; // ignora meu próprio eco
 
     const diff = Math.abs((player.currentTime || 0) - payload.time);
@@ -422,6 +489,78 @@
     setTimeout(() => { suppressEvents = false; }, 300);
   }
 
+  // ======= WEBRTC: transmissão ao vivo de quem tem o filme pra quem não tem =======
+
+  function newPeerConnection(){
+    const conn = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    conn.onicecandidate = (e) => {
+      if (e.candidate && channel) {
+        channel.send({
+          type: 'broadcast', event: 'webrtc-ice',
+          payload: { from: myId, role: currentRole, candidate: e.candidate }
+        });
+      }
+    };
+    return conn;
+  }
+
+  async function startHostOffer(){
+    if (!hostVideoReady || !channel) { pendingGuestRequest = true; return; }
+    pendingGuestRequest = false;
+    streamStatus.textContent = 'Conectando transmissão…';
+
+    if (pc) { pc.close(); }
+    pc = newPeerConnection();
+
+    const stream = player.captureStream ? player.captureStream() : player.mozCaptureStream();
+    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    channel.send({
+      type: 'broadcast', event: 'webrtc-offer',
+      payload: { from: myId, sdp: offer }
+    });
+  }
+
+  async function handleOfferAsGuest(payload){
+    streamStatus.textContent = 'Recebendo transmissão…';
+    if (pc) { pc.close(); }
+    pc = newPeerConnection();
+
+    pc.ontrack = (e) => {
+      player.srcObject = e.streams[0];
+      player.style.display = 'block';
+      placeholder.style.display = 'none';
+      player.play().catch(() => {
+        streamStatus.textContent = 'Toque no vídeo pra iniciar o som';
+      });
+      streamStatus.textContent = 'Transmissão ao vivo conectada';
+      metaInfo.textContent = 'Recebendo filme da outra pessoa';
+    };
+
+    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    channel.send({
+      type: 'broadcast', event: 'webrtc-answer',
+      payload: { from: myId, sdp: answer }
+    });
+  }
+
+  async function handleAnswerAsHost(payload){
+    if (!pc) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+    streamStatus.textContent = 'Transmissão ao vivo conectada';
+  }
+
+  async function handleRemoteIce(payload){
+    if (!pc || payload.role === currentRole) return; // só aplica candidato do outro lado
+    try { await pc.addIceCandidate(payload.candidate); } catch(e) {}
+  }
+
   btnJoin.addEventListener('click', () => {
     const code = roomCodeInput.value.trim().toLowerCase();
     if (!code) { roomCodeInput.focus(); return; }
@@ -438,6 +577,16 @@
     });
 
     channel.on('broadcast', { event: 'sync' }, (msg) => applyRemote(msg.payload));
+    channel.on('broadcast', { event: 'webrtc-offer' }, (msg) => {
+      if (currentMode === 'stream' && currentRole === 'guest') handleOfferAsGuest(msg.payload);
+    });
+    channel.on('broadcast', { event: 'webrtc-answer' }, (msg) => {
+      if (currentMode === 'stream' && currentRole === 'host') handleAnswerAsHost(msg.payload);
+    });
+    channel.on('broadcast', { event: 'webrtc-ice' }, (msg) => handleRemoteIce(msg.payload));
+    channel.on('broadcast', { event: 'webrtc-request' }, () => {
+      if (currentMode === 'stream' && currentRole === 'host') startHostOffer();
+    });
 
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
@@ -456,8 +605,12 @@
         seatMe.classList.add('on');
         await channel.track({ joinedAt: Date.now() });
         setStatus('waiting', 'Sala "' + code + '" — esperando a outra pessoa entrar');
-        // pede o estado atual pra quem já estiver na sala
-        sendState('request-sync');
+        if (currentMode === 'stream' && currentRole === 'guest') {
+          channel.send({ type: 'broadcast', event: 'webrtc-request', payload: { from: myId } });
+        } else {
+          // pede o estado atual pra quem já estiver na sala (modo "cada um com o próprio arquivo")
+          sendState('request-sync');
+        }
       }
     });
 
