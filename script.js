@@ -4,6 +4,14 @@
   const SUPABASE_ANON_KEY = "sb_publishable_PvIiBvBCucOinjgC4biNlg_KBvjVOlS";
   // ==========================================================
 
+  const ICE_SERVERS = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun.relay.metered.ca:80" },
+    { urls: "turn:global.relay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:global.relay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+    { urls: "turn:global.relay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
+  ];
+
   const player = document.getElementById('player');
   const placeholder = document.getElementById('placeholder');
   const inputVideo = document.getElementById('inputVideo');
@@ -17,15 +25,19 @@
   const statusText = document.getElementById('statusText');
   const metaInfo = document.getElementById('metaInfo');
   const driftInfo = document.getElementById('driftInfo');
-  const seatMe = document.getElementById('seatMe');
-  const seatOther = document.getElementById('seatOther');
-
-  const myId = Math.random().toString(36).slice(2);
-  let channel = null;
-  let suppressEvents = false; // evita eco ao aplicar estado remoto
-  let lastSentAt = 0;
-  let otherPresent = false;
-  let supabase = null;
+  const nodeMe = document.getElementById('nodeMe');
+  const nodeOther = document.getElementById('nodeOther');
+  const threadLine = document.getElementById('threadLine');
+  const streamStatus = document.getElementById('streamStatus');
+  const modeSegmented = document.getElementById('modeSegmented');
+  const roleSegmented = document.getElementById('roleSegmented');
+  const lockBadge = document.getElementById('lockBadge');
+  const modeHint = document.getElementById('modeHint');
+  const stageEl = document.querySelector('.stage');
+  const videoWrap = document.getElementById('videoWrap');
+  const accountEmail = document.getElementById('accountEmail');
+  const btnLogout = document.getElementById('btnLogout');
+  const flyoutBackdrop = document.getElementById('flyoutBackdrop');
 
   const loginScreen = document.getElementById('loginScreen');
   const appScreen = document.getElementById('appScreen');
@@ -34,91 +46,159 @@
   const btnLogin = document.getElementById('btnLogin');
   const loginError = document.getElementById('loginError');
 
-  function getSupabase(){
-    if (!supabase) {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const myId = Math.random().toString(36).slice(2);
+  let channel = null;
+  let suppressEvents = false;
+  let otherPresent = false;
+  let supabase = null;
+
+  let currentMode = 'each';
+  let currentRole = 'host';
+  let pc = null;
+  let hostVideoReady = false;
+  let pendingIceQueue = [];
+  let remoteDescSet = false;
+  let guestRetryTimer = null;
+
+  // ---------- navegação lateral (flyouts) ----------
+  const panels = { room: document.getElementById('flyoutRoom'), mode: document.getElementById('flyoutMode'), load: document.getElementById('flyoutLoad'), account: document.getElementById('flyoutAccount') };
+  const navButtons = { room: document.getElementById('navRoom'), mode: document.getElementById('navMode'), load: document.getElementById('navLoad'), account: document.getElementById('navAccount') };
+  let openPanel = null;
+
+  function closePanel(){
+    if (!openPanel) return;
+    panels[openPanel].classList.remove('show');
+    navButtons[openPanel].classList.remove('active');
+    flyoutBackdrop.classList.remove('show');
+    openPanel = null;
+  }
+  function togglePanel(name){
+    if (openPanel === name) { closePanel(); return; }
+    closePanel();
+    panels[name].classList.add('show');
+    navButtons[name].classList.add('active');
+    flyoutBackdrop.classList.add('show');
+    openPanel = name;
+  }
+  Object.keys(navButtons).forEach(name => {
+    navButtons[name].addEventListener('click', () => togglePanel(name));
+  });
+  flyoutBackdrop.addEventListener('click', closePanel);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePanel(); });
+
+  // ---------- ajustar o palco pra caber na tela sem gerar scroll ----------
+  function fitStage(){
+    const availW = stageEl.clientWidth;
+    const availH = stageEl.clientHeight;
+    if (availW <= 0 || availH <= 0) return;
+    let w = availW;
+    let h = w * 9 / 16;
+    if (h > availH) { h = availH; w = h * 16 / 9; }
+    videoWrap.style.width = Math.floor(w) + 'px';
+    videoWrap.style.height = Math.floor(h) + 'px';
+  }
+  window.addEventListener('resize', fitStage);
+  new ResizeObserver(fitStage).observe(stageEl);
+
+  const MODE_HINTS = {
+    each: 'Os dois precisam ter o mesmo filme salvo — só o play, a pausa e o tempo são sincronizados.',
+    stream: 'Só quem tem o filme precisa do arquivo — o vídeo vai direto pro navegador do outro.'
+  };
+  function updateModeHint(){ modeHint.textContent = MODE_HINTS[currentMode]; }
+
+  // ---------- travar controles de quem só recebe a transmissão ----------
+  function applyControlLock(){
+    const isLockedGuest = currentMode === 'stream' && currentRole === 'guest';
+    player.controls = !isLockedGuest;
+    player.tabIndex = isLockedGuest ? -1 : 0;
+    player.classList.toggle('no-interact', isLockedGuest);
+    lockBadge.classList.toggle('hidden', !isLockedGuest);
+  }
+
+  // ---------- segmented controls ----------
+  function setSegmented(container, value){
+    container.querySelectorAll('.segment').forEach(btn => btn.classList.toggle('active', btn.dataset.value === value));
+  }
+  modeSegmented.addEventListener('click', (e) => {
+    const btn = e.target.closest('.segment');
+    if (!btn) return;
+    currentMode = btn.dataset.value;
+    setSegmented(modeSegmented, currentMode);
+    roleSegmented.classList.toggle('hidden', currentMode !== 'stream');
+    updateLoaderState();
+    applyControlLock();
+    updateModeHint();
+  });
+  roleSegmented.addEventListener('click', (e) => {
+    const btn = e.target.closest('.segment');
+    if (!btn) return;
+    currentRole = btn.dataset.value;
+    setSegmented(roleSegmented, currentRole);
+    updateLoaderState();
+    applyControlLock();
+  });
+
+  function updateLoaderState(){
+    if (currentMode === 'stream' && currentRole === 'guest' && player.style.display !== 'block') {
+      placeholder.querySelector('p').textContent = 'Aguardando a transmissão da outra pessoa…';
+    } else if (player.style.display !== 'block') {
+      placeholder.querySelector('p').textContent = 'Entre numa sala e carregue o filme pra começar.';
     }
+  }
+
+  // ---------- login ----------
+  function getSupabase(){
+    if (!supabase) supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     return supabase;
   }
 
-  function showApp(){
+  function showApp(email){
     loginScreen.classList.add('hidden');
     appScreen.classList.remove('hidden');
+    accountEmail.textContent = email || '';
+    updateModeHint();
+    requestAnimationFrame(fitStage);
   }
 
   async function tryLogin(){
     loginError.textContent = '';
     const email = loginEmail.value.trim();
     const password = loginPassword.value;
-    if (!email || !password) {
-      loginError.textContent = 'Preencha e-mail e senha.';
-      return;
-    }
+    if (!email || !password) { loginError.textContent = 'Preencha e-mail e senha.'; return; }
     if (SUPABASE_URL.includes('SUA_URL') || SUPABASE_ANON_KEY.includes('SUA_CHAVE')) {
       loginError.textContent = 'Faltou colocar a URL e a chave do Supabase no código.';
       return;
     }
     btnLogin.disabled = true;
     btnLogin.textContent = 'Entrando…';
-    const { error } = await getSupabase().auth.signInWithPassword({ email, password });
+    const { data, error } = await getSupabase().auth.signInWithPassword({ email, password });
     btnLogin.disabled = false;
     btnLogin.textContent = 'Entrar';
-    if (error) {
-      loginError.textContent = 'E-mail ou senha incorretos.';
-      return;
-    }
-    showApp();
+    if (error) { loginError.textContent = 'E-mail ou senha incorretos.'; return; }
+    showApp(data.user ? data.user.email : email);
   }
 
   btnLogin.addEventListener('click', tryLogin);
   loginPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryLogin(); });
 
-  // Se já existir uma sessão salva no navegador, entra direto sem pedir login de novo
+  btnLogout.addEventListener('click', async () => {
+    await getSupabase().auth.signOut();
+    closePanel();
+    appScreen.classList.add('hidden');
+    loginScreen.classList.remove('hidden');
+    loginEmail.value = '';
+    loginPassword.value = '';
+  });
+
   (async function checkExistingSession(){
     if (SUPABASE_URL.includes('SUA_URL') || SUPABASE_ANON_KEY.includes('SUA_CHAVE')) return;
     const { data } = await getSupabase().auth.getSession();
-    if (data && data.session) showApp();
+    if (data && data.session) showApp(data.session.user.email);
   })();
 
-  const modePanel = document.getElementById('modePanel');
-  const rolePanel = document.getElementById('rolePanel');
-  const loaderControls = document.getElementById('loaderControls');
-  const streamStatusRow = document.getElementById('streamStatusRow');
-  const streamStatus = document.getElementById('streamStatus');
-
-  let currentMode = 'each';
-  let currentRole = 'host';
-  let pc = null; // RTCPeerConnection
-  let hostVideoReady = false;
-  let pendingGuestRequest = false;
-  const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
-
-  document.querySelectorAll('input[name="mode"]').forEach(r => {
-    r.addEventListener('change', () => {
-      currentMode = document.querySelector('input[name="mode"]:checked').value;
-      rolePanel.classList.toggle('hidden', currentMode !== 'stream');
-      updateLoaderVisibility();
-    });
-  });
-  document.querySelectorAll('input[name="role"]').forEach(r => {
-    r.addEventListener('change', () => {
-      currentRole = document.querySelector('input[name="role"]:checked').value;
-      updateLoaderVisibility();
-    });
-  });
-
-  function updateLoaderVisibility(){
-    const showLoader = currentMode === 'each' || (currentMode === 'stream' && currentRole === 'host');
-    loaderControls.classList.toggle('hidden', !showLoader);
-    streamStatusRow.style.display = currentMode === 'stream' ? 'flex' : 'none';
-    if (currentMode === 'stream' && currentRole === 'guest') {
-      placeholder.innerHTML = '<span class="curtain-icon">🎬</span>Aguardando a transmissão da outra pessoa…';
-      placeholder.style.display = player.style.display === 'block' ? 'none' : 'block';
-    }
-  }
-
+  // ---------- carregar vídeo ----------
   function setStatus(state, text){
-    statusDot.className = 'status-dot' + (state ? ' ' + state : '');
+    statusDot.className = 'side-dot' + (state ? ' ' + state : '');
     statusText.textContent = text;
   }
 
@@ -127,23 +207,23 @@
     player.style.display = 'block';
     placeholder.style.display = 'none';
     metaInfo.textContent = 'Filme: ' + label;
+    closePanel();
   }
 
   player.addEventListener('loadedmetadata', () => {
     if (currentMode === 'stream' && currentRole === 'host') {
       hostVideoReady = true;
       player.play().catch(()=>{});
-      if (pendingGuestRequest) startHostOffer();
+      if (otherPresent) startHostOffer();
     }
   });
 
   inputVideo.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    loadVideoFromSrc(url, file.name);
+    loadVideoFromSrc(URL.createObjectURL(file), file.name);
     btnVideo.classList.add('loaded');
-    labelVideo.textContent = file.name.length > 26 ? file.name.slice(0,23) + '…' : file.name;
+    labelVideo.textContent = file.name.length > 24 ? file.name.slice(0,21) + '…' : file.name;
   });
 
   btnLoadUrl.addEventListener('click', () => {
@@ -152,169 +232,155 @@
     loadVideoFromSrc(url, 'link direto');
   });
 
+  // ---------- sincronização (modo "cada um com o arquivo") ----------
   function sendState(eventName, extra){
     if (!channel) return;
-    lastSentAt = Date.now();
-    channel.send({
-      type: 'broadcast',
-      event: 'sync',
-      payload: Object.assign({
-        from: myId,
-        time: player.currentTime || 0,
-        playing: !player.paused,
-        action: eventName,
-        at: Date.now()
-      }, extra || {})
-    });
+    channel.send({ type: 'broadcast', event: 'sync', payload: Object.assign({ from: myId, time: player.currentTime || 0, playing: !player.paused, action: eventName, at: Date.now() }, extra || {}) });
   }
-
-  // Envia comandos quando EU controlo o vídeo (não quando é aplicação remota) — só no modo "cada um com o próprio arquivo"
   player.addEventListener('play', () => { if (!suppressEvents && currentMode === 'each') sendState('play'); });
   player.addEventListener('pause', () => { if (!suppressEvents && currentMode === 'each') sendState('pause'); });
   player.addEventListener('seeked', () => { if (!suppressEvents && currentMode === 'each') sendState('seek'); });
-
-  // Heartbeat leve pra quem entra depois se ajustar, e corrigir deriva de tempo
   setInterval(() => {
     if (currentMode !== 'each' || !channel || player.paused || !player.src) return;
     sendState('heartbeat');
   }, 4000);
-
   function applyRemote(payload){
-    if (currentMode !== 'each') return;
-    if (payload.from === myId) return; // ignora meu próprio eco
-
+    if (currentMode !== 'each' || payload.from === myId) return;
     const diff = Math.abs((player.currentTime || 0) - payload.time);
-
     suppressEvents = true;
-
-    // Corrige o tempo se a diferença for perceptível (>1.2s) ou se for um seek explícito
-    if (payload.action === 'seek' || diff > 1.2) {
-      try { player.currentTime = payload.time; } catch(e) {}
-    }
-
-    if (payload.playing && player.paused) {
-      player.play().catch(()=>{});
-    } else if (!payload.playing && !player.paused) {
-      player.pause();
-    }
-
-    driftInfo.textContent = diff > 1.2 ? 'ajustado (' + diff.toFixed(1) + 's de diferença)' : '';
-
+    if (payload.action === 'seek' || diff > 1.2) { try { player.currentTime = payload.time; } catch(e) {} }
+    if (payload.playing && player.paused) player.play().catch(()=>{});
+    else if (!payload.playing && !player.paused) player.pause();
+    driftInfo.textContent = diff > 1.2 ? 'ajustado (' + diff.toFixed(1) + 's)' : '';
     setTimeout(() => { suppressEvents = false; }, 300);
   }
 
-  // ======= WEBRTC: transmissão ao vivo de quem tem o filme pra quem não tem =======
-
+  // ---------- WebRTC: transmissão ao vivo ----------
   function newPeerConnection(){
     const conn = new RTCPeerConnection({ iceServers: ICE_SERVERS });
     conn.onicecandidate = (e) => {
-      if (e.candidate && channel) {
-        channel.send({
-          type: 'broadcast', event: 'webrtc-ice',
-          payload: { from: myId, role: currentRole, candidate: e.candidate }
-        });
+      if (e.candidate && channel) channel.send({ type: 'broadcast', event: 'webrtc-ice', payload: { from: myId, role: currentRole, candidate: e.candidate } });
+    };
+    conn.onconnectionstatechange = () => {
+      const state = conn.connectionState;
+      const labels = { connecting: 'Conectando transmissão…', connected: 'Transmissão ao vivo conectada', disconnected: 'Conexão perdida, tentando de novo…', failed: 'Falha na conexão — tentando de novo…', closed: '' };
+      streamStatus.textContent = labels[state] || '';
+      if (state === 'failed' && currentMode === 'stream') {
+        if (currentRole === 'host' && otherPresent) setTimeout(startHostOffer, 1500);
+        if (currentRole === 'guest') requestOfferWithRetry();
       }
     };
     return conn;
   }
 
+  async function flushPendingIce(){
+    if (!pc) return;
+    while (pendingIceQueue.length) {
+      const candidate = pendingIceQueue.shift();
+      try { await pc.addIceCandidate(candidate); } catch(e) {}
+    }
+  }
+
   async function startHostOffer(){
-    if (!hostVideoReady || !channel) { pendingGuestRequest = true; return; }
-    pendingGuestRequest = false;
+    if (!hostVideoReady || !channel) return;
     streamStatus.textContent = 'Conectando transmissão…';
-
-    if (pc) { pc.close(); }
+    remoteDescSet = false;
+    pendingIceQueue = [];
+    if (pc) pc.close();
     pc = newPeerConnection();
-
     const stream = player.captureStream ? player.captureStream() : player.mozCaptureStream();
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
-    channel.send({
-      type: 'broadcast', event: 'webrtc-offer',
-      payload: { from: myId, sdp: offer }
-    });
+    channel.send({ type: 'broadcast', event: 'webrtc-offer', payload: { from: myId, sdp: offer } });
   }
 
   async function handleOfferAsGuest(payload){
+    stopGuestRetry();
     streamStatus.textContent = 'Recebendo transmissão…';
-    if (pc) { pc.close(); }
+    remoteDescSet = false;
+    pendingIceQueue = [];
+    if (pc) pc.close();
     pc = newPeerConnection();
-
     pc.ontrack = (e) => {
       player.srcObject = e.streams[0];
       player.style.display = 'block';
       placeholder.style.display = 'none';
-      player.play().catch(() => {
-        streamStatus.textContent = 'Toque no vídeo pra iniciar o som';
-      });
-      streamStatus.textContent = 'Transmissão ao vivo conectada';
+      applyControlLock();
+      player.play().catch(() => { streamStatus.textContent = 'Toque no vídeo pra iniciar o som'; });
       metaInfo.textContent = 'Recebendo filme da outra pessoa';
+      closePanel();
     };
-
     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+    remoteDescSet = true;
+    await flushPendingIce();
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-
-    channel.send({
-      type: 'broadcast', event: 'webrtc-answer',
-      payload: { from: myId, sdp: answer }
-    });
+    channel.send({ type: 'broadcast', event: 'webrtc-answer', payload: { from: myId, sdp: answer } });
   }
 
   async function handleAnswerAsHost(payload){
     if (!pc) return;
     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-    streamStatus.textContent = 'Transmissão ao vivo conectada';
+    remoteDescSet = true;
+    await flushPendingIce();
   }
 
   async function handleRemoteIce(payload){
-    if (!pc || payload.role === currentRole) return; // só aplica candidato do outro lado
-    try { await pc.addIceCandidate(payload.candidate); } catch(e) {}
+    if (!pc || payload.role === currentRole) return;
+    if (remoteDescSet) { try { await pc.addIceCandidate(payload.candidate); } catch(e) {} }
+    else pendingIceQueue.push(payload.candidate);
   }
 
+  function requestOfferWithRetry(){
+    stopGuestRetry();
+    let attempts = 0;
+    const tryRequest = () => {
+      if (!channel || currentRole !== 'guest' || currentMode !== 'stream') { stopGuestRetry(); return; }
+      if (pc && pc.connectionState === 'connected') { stopGuestRetry(); return; }
+      attempts++;
+      channel.send({ type: 'broadcast', event: 'webrtc-request', payload: { from: myId } });
+      if (attempts === 1) streamStatus.textContent = 'Procurando a transmissão…';
+      if (attempts >= 8) { stopGuestRetry(); streamStatus.textContent = 'Não encontrei a transmissão — confirme se a outra pessoa já carregou o filme.'; }
+    };
+    tryRequest();
+    guestRetryTimer = setInterval(tryRequest, 4000);
+  }
+  function stopGuestRetry(){ if (guestRetryTimer) { clearInterval(guestRetryTimer); guestRetryTimer = null; } }
+
+  // ---------- sala ----------
   btnJoin.addEventListener('click', () => {
     const code = roomCodeInput.value.trim().toLowerCase();
     if (!code) { roomCodeInput.focus(); return; }
-
     if (SUPABASE_URL.includes('SUA_URL') || SUPABASE_ANON_KEY.includes('SUA_CHAVE')) {
       setStatus('', 'Faltou colocar a URL e a chave do Supabase no código');
       return;
     }
+    if (channel) channel.unsubscribe();
+    stopGuestRetry();
 
-    if (channel) { channel.unsubscribe(); }
-
-    channel = getSupabase().channel('sala-' + code, {
-      config: { broadcast: { self: false }, presence: { key: myId } }
-    });
+    channel = getSupabase().channel('sala-' + code, { config: { broadcast: { self: false }, presence: { key: myId } } });
 
     channel.on('broadcast', { event: 'sync' }, (msg) => applyRemote(msg.payload));
-    channel.on('broadcast', { event: 'webrtc-offer' }, (msg) => {
-      if (currentMode === 'stream' && currentRole === 'guest') handleOfferAsGuest(msg.payload);
-    });
-    channel.on('broadcast', { event: 'webrtc-answer' }, (msg) => {
-      if (currentMode === 'stream' && currentRole === 'host') handleAnswerAsHost(msg.payload);
-    });
+    channel.on('broadcast', { event: 'webrtc-offer' }, (msg) => { if (currentMode === 'stream' && currentRole === 'guest') handleOfferAsGuest(msg.payload); });
+    channel.on('broadcast', { event: 'webrtc-answer' }, (msg) => { if (currentMode === 'stream' && currentRole === 'host') handleAnswerAsHost(msg.payload); });
     channel.on('broadcast', { event: 'webrtc-ice' }, (msg) => handleRemoteIce(msg.payload));
-    channel.on('broadcast', { event: 'webrtc-request' }, () => {
-      if (currentMode === 'stream' && currentRole === 'host') startHostOffer();
-    });
+    channel.on('broadcast', { event: 'webrtc-request' }, () => { if (currentMode === 'stream' && currentRole === 'host') startHostOffer(); });
 
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
       const count = Object.keys(state).length;
+      const wasPresent = otherPresent;
       otherPresent = count > 1;
-      seatOther.classList.toggle('on', otherPresent);
+      nodeMe.classList.add('on');
+      nodeOther.classList.toggle('on', otherPresent);
+      threadLine.classList.toggle('on', otherPresent);
+
       if (otherPresent) {
         setStatus('connected', 'Sala "' + code + '" — os dois estão aqui');
-        // Anfitrião: assim que detectar o outro na sala, (re)inicia a transmissão —
-        // não depende de quem entrou primeiro, nem de um pedido explícito do convidado.
-        if (currentMode === 'stream' && currentRole === 'host') {
-          if (!pc || pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'new') {
-            startHostOffer();
-          }
+        if (!wasPresent && currentMode === 'stream') {
+          if (currentRole === 'host' && hostVideoReady) startHostOffer();
+          if (currentRole === 'guest') requestOfferWithRetry();
         }
       } else {
         setStatus('waiting', 'Sala "' + code + '" — esperando a outra pessoa entrar');
@@ -323,15 +389,10 @@
 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        seatMe.classList.add('on');
+        nodeMe.classList.add('on');
         await channel.track({ joinedAt: Date.now() });
         setStatus('waiting', 'Sala "' + code + '" — esperando a outra pessoa entrar');
-        if (currentMode === 'stream' && currentRole === 'guest') {
-          channel.send({ type: 'broadcast', event: 'webrtc-request', payload: { from: myId } });
-        } else {
-          // pede o estado atual pra quem já estiver na sala (modo "cada um com o próprio arquivo")
-          sendState('request-sync');
-        }
+        if (currentMode === 'each') sendState('request-sync');
       }
     });
 

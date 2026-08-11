@@ -3,99 +3,129 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sala de Cinema a Dois</title>
+<title>Cinema | fran.mig </title>
+<link rel="icon" type="image/png" href="img/cinema-removebg-preview.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,480&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div id="loginScreen" class="login-screen">
-  <div style="text-align:center;">
-    <div class="eyebrow">Entrada reservada</div>
-    <h1 style="font-size:26px;">Sala de <em>Cinema</em></h1>
+<!-- ---------- login ---------- -->
+<div id="loginScreen" class="screen login-screen">
+  <div class="card login-card">
+    <span class="eyebrow">Cinema do xuxu</span>
+    <h1>fran-mig<span class="dot">.</span></h1>
+    <label class="field">
+      <span>E-mail</span>
+      <input type="email" id="loginEmail" autocomplete="username">
+    </label>
+    <label class="field">
+      <span>Senha</span>
+      <input type="password" id="loginPassword" autocomplete="current-password">
+    </label>
+    <button class="btn btn-primary" id="btnLogin">Entrar</button>
+    <p class="login-error" id="loginError"></p>
   </div>
-  <input type="email" id="loginEmail" placeholder="e-mail" autocomplete="username">
-  <input type="password" id="loginPassword" placeholder="senha" autocomplete="current-password">
-  <button class="btn" id="btnLogin">Entrar</button>
-  <div class="login-error" id="loginError"></div>
 </div>
 
-<div id="appScreen" class="hidden" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+<!-- ---------- app ---------- -->
+<div id="appScreen" class="screen app-screen hidden">
 
-<header>
-  <div class="eyebrow">Sessão a dois</div>
-  <h1>Sala de <em>Cinema</em></h1>
-  <div class="seats">
-    <div class="seat" id="seatMe"></div>
-    <div class="seat" id="seatOther"></div>
-  </div>
-</header>
+  <nav class="sidebar">
+    <div class="sidebar-top">
+      <span class="sidebar-logo">Fm<span class="dot">.</span></span>
 
-<main>
-  <div class="room-panel">
-    <input type="text" id="roomCode" placeholder="Código da sala" maxlength="20">
-    <button class="btn" id="btnJoin">Entrar na sala</button>
-    <div class="status-line">
-      <span class="status-dot" id="statusDot"></span>
-      <span id="statusText">Fora de uma sala</span>
+      <button class="side-btn" id="navRoom" data-panel="room" type="button" aria-label="Sala">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="12" r="5"/><circle cx="15.5" cy="12" r="5"/></svg>
+        <span class="side-dot" id="statusDot"></span>
+      </button>
+
+      <button class="side-btn" id="navMode" data-panel="mode" type="button" aria-label="Modo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2" fill="currentColor" stroke="none"/></svg>
+      </button>
+
+      <button class="side-btn" id="navLoad" data-panel="load" type="button" aria-label="Filme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.5 9.2v5.6l4.5-2.8z" fill="currentColor" stroke="none"/></svg>
+      </button>
     </div>
+
+    <div class="sidebar-bottom">
+      <button class="side-btn" id="navAccount" data-panel="account" type="button" aria-label="Conta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.3" r="3.3"/><path d="M5 20c1.1-4 4-6.2 7-6.2s5.9 2.2 7 6.2"/></svg>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ---------- flyouts ---------- -->
+  <div class="flyout-backdrop" id="flyoutBackdrop"></div>
+
+  <div class="flyout" id="flyoutRoom">
+    <span class="flyout-title">Sala</span>
+    <div class="thread" aria-hidden="true">
+      <span class="node" id="nodeMe"></span>
+      <span class="thread-line" id="threadLine"></span>
+      <span class="node" id="nodeOther"></span>
+    </div>
+    <div class="flyout-row">
+      <input type="text" id="roomCode" placeholder="código da sala" maxlength="20">
+      <button class="btn btn-primary" id="btnJoin">Entrar</button>
+    </div>
+    <p class="flyout-hint" id="statusText">Fora de uma sala</p>
   </div>
 
-  <div class="room-panel" id="modePanel">
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-      <input type="radio" name="mode" value="each" checked> Cada um com o próprio arquivo
-    </label>
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-      <input type="radio" name="mode" value="stream"> Só uma pessoa tem o filme (transmite ao vivo)
-    </label>
+  <div class="flyout" id="flyoutMode">
+    <span class="flyout-title">Modo</span>
+    <div class="segmented" id="modeSegmented">
+      <button class="segment active" data-value="each" type="button">Cada um com o arquivo</button>
+      <button class="segment" data-value="stream" type="button">Transmissão ao vivo</button>
+    </div>
+    <div class="segmented hidden" id="roleSegmented">
+      <button class="segment active" data-value="host" type="button">Eu tenho o filme</button>
+      <button class="segment" data-value="guest" type="button">Vou receber</button>
+    </div>
+    <p class="flyout-hint" id="modeHint">Os dois precisam ter o mesmo filme salvo — só o play, a pausa e o tempo são sincronizados.</p>
   </div>
 
-  <div class="room-panel hidden" id="rolePanel">
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-      <input type="radio" name="role" value="host" checked> Eu tenho o filme
-    </label>
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-      <input type="radio" name="role" value="guest"> Vou receber o filme da outra pessoa
-    </label>
-  </div>
-
-  <div class="controls" id="loaderControls">
+  <div class="flyout" id="flyoutLoad">
+    <span class="flyout-title">Filme</span>
     <label class="file-btn" id="btnVideo">
-      <span id="labelVideo">Escolher filme (arquivo local)</span>
+      <span id="labelVideo">Escolher filme</span>
       <input type="file" id="inputVideo" accept="video/*">
     </label>
-    <input type="text" class="url-input" id="urlInput" placeholder="ou cole o link direto do vídeo (.mp4)">
-    <button class="btn" id="btnLoadUrl">Carregar link</button>
-  </div>
-
-  <div class="stage-frame">
-    <div class="video-wrap" id="videoWrap">
-      <div class="placeholder" id="placeholder">
-        <span class="curtain-icon">🎬</span>
-        Entre numa sala e carregue o filme pra começar.<br>
-        Cada um carrega o próprio arquivo — o play, pause e o tempo ficam sincronizados.
-      </div>
-      <video id="player" controls playsinline style="display:none;"></video>
+    <div class="flyout-row">
+      <input type="text" class="url-input" id="urlInput" placeholder="ou cole um link direto (.mp4)">
+      <button class="btn btn-ghost" id="btnLoadUrl">Carregar</button>
     </div>
   </div>
 
-  <div class="meta-row">
-    <span id="metaInfo">Nenhum vídeo carregado</span>
-    <span id="driftInfo"></span>
+  <div class="flyout" id="flyoutAccount">
+    <span class="flyout-title">Conta</span>
+    <p class="flyout-hint" id="accountEmail"></p>
+    <button class="btn btn-ghost" id="btnLogout">Sair</button>
   </div>
-  <div class="meta-row" id="streamStatusRow" style="display:none;">
-    <span id="streamStatus"></span>
-  </div>
-</main>
 
-<footer>
-  <strong>Cada um com o próprio arquivo:</strong> os dois precisam ter o mesmo filme salvo, e só o play/pause/tempo é sincronizado.<br>
-  <strong>Transmissão ao vivo:</strong> só quem escolher "Eu tenho o filme" precisa do arquivo — o vídeo é enviado direto pro navegador do outro (peer-to-peer), sem passar por nenhum servidor.
-</footer>
+  <!-- ---------- palco ---------- -->
+  <main class="stage">
+    <div class="video-wrap" id="videoWrap">
+      <div class="placeholder" id="placeholder">
+        <span class="placeholder-icon">▸</span>
+        <p>Entre numa sala e carregue o filme pra começar.</p>
+      </div>
+      <video id="player" controls playsinline style="display:none;"></video>
+      <span class="lock-badge hidden" id="lockBadge">Controlado por quem está transmitindo</span>
+      <div class="video-caption" id="videoCaption">
+        <span id="metaInfo">Nenhum vídeo carregado</span>
+        <span id="driftInfo"></span>
+        <span id="streamStatus"></span>
+      </div>
+    </div>
+  </main>
 
-</div><!-- fim appScreen -->
+</div>
 
 <script src="script.js"></script>
-
 </body>
 </html>
