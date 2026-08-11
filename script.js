@@ -2,8 +2,7 @@
   // ======= PREENCHA AQUI COM SEUS DADOS DO SUPABASE =======
   const SUPABASE_URL = "https://eogugfwxbqcydonhnmnd.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_PvIiBvBCucOinjgC4biNlg_KBvjVOlS";
-  // ==========================================================
-
+  // ==========================================================S
   const ICE_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun.relay.metered.ca:80" },
@@ -32,6 +31,14 @@
   const modeSegmented = document.getElementById('modeSegmented');
   const roleSegmented = document.getElementById('roleSegmented');
   const lockBadge = document.getElementById('lockBadge');
+  const btnFullscreen = document.getElementById('btnFullscreen');
+  const guestRequests = document.getElementById('guestRequests');
+  const btnRequestPause = document.getElementById('btnRequestPause');
+  const btnRequestPlay = document.getElementById('btnRequestPlay');
+  const toast = document.getElementById('toast');
+  const toastText = document.getElementById('toastText');
+  const toastAction = document.getElementById('toastAction');
+  const toastDismiss = document.getElementById('toastDismiss');
   const modeHint = document.getElementById('modeHint');
   const stageEl = document.querySelector('.stage');
   const videoWrap = document.getElementById('videoWrap');
@@ -87,9 +94,11 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePanel(); });
 
   // ---------- ajustar o palco pra caber na tela sem gerar scroll ----------
+  const videoStatusEl = document.getElementById('videoStatus');
   function fitStage(){
     const availW = stageEl.clientWidth;
-    const availH = stageEl.clientHeight;
+    const statusH = videoStatusEl.offsetHeight + 8; // margem entre vídeo e status
+    const availH = stageEl.clientHeight - statusH;
     if (availW <= 0 || availH <= 0) return;
     let w = availW;
     let h = w * 9 / 16;
@@ -99,6 +108,7 @@
   }
   window.addEventListener('resize', fitStage);
   new ResizeObserver(fitStage).observe(stageEl);
+  new ResizeObserver(fitStage).observe(videoStatusEl);
 
   const MODE_HINTS = {
     each: 'Os dois precisam ter o mesmo filme salvo — só o play, a pausa e o tempo são sincronizados.',
@@ -113,6 +123,71 @@
     player.tabIndex = isLockedGuest ? -1 : 0;
     player.classList.toggle('no-interact', isLockedGuest);
     lockBadge.classList.toggle('hidden', !isLockedGuest);
+    btnFullscreen.classList.toggle('hidden', !isLockedGuest);
+    guestRequests.classList.toggle('hidden', !isLockedGuest);
+  }
+
+  // ---------- tela cheia (só existe pra quem tem controles bloqueados) ----------
+  const ICON_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H4v4"/><path d="M16 4h4v4"/><path d="M8 20H4v-4"/><path d="M16 20h4v-4"/></svg>';
+  const ICON_SHRINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h4V4"/><path d="M20 8h-4V4"/><path d="M4 16h4v4"/><path d="M20 16h-4v4"/></svg>';
+
+  function isWrapFullscreen(){
+    return document.fullscreenElement === videoWrap || document.webkitFullscreenElement === videoWrap;
+  }
+
+  function updateFullscreenIcon(){
+    btnFullscreen.innerHTML = isWrapFullscreen() ? ICON_SHRINK : ICON_EXPAND;
+    btnFullscreen.setAttribute('aria-label', isWrapFullscreen() ? 'Sair da tela cheia' : 'Tela cheia');
+  }
+
+  btnFullscreen.addEventListener('click', () => {
+    if (isWrapFullscreen()) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) exit.call(document);
+    } else {
+      const req = videoWrap.requestFullscreen || videoWrap.webkitRequestFullscreen;
+      if (req) req.call(videoWrap);
+    }
+  });
+
+  document.addEventListener('fullscreenchange', updateFullscreenIcon);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+
+  // ---------- convidado pede pausa/play; anfitrião recebe notificação ----------
+  function flashSent(btn){
+    btn.classList.add('sent');
+    setTimeout(() => btn.classList.remove('sent'), 1200);
+  }
+
+  function sendControlRequest(action){
+    if (!channel) return;
+    channel.send({ type: 'broadcast', event: 'control-request', payload: { from: myId, action } });
+  }
+
+  btnRequestPause.addEventListener('click', () => { sendControlRequest('pause'); flashSent(btnRequestPause); });
+  btnRequestPlay.addEventListener('click', () => { sendControlRequest('play'); flashSent(btnRequestPlay); });
+
+  let toastTimer = null;
+  function showToast(message, actionLabel, actionFn){
+    toastText.textContent = message;
+    toastAction.textContent = actionLabel;
+    toastAction.onclick = () => { actionFn(); hideToast(); };
+    toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, 8000);
+  }
+  function hideToast(){
+    toast.classList.remove('show');
+    if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+  }
+  toastDismiss.addEventListener('click', hideToast);
+
+  function handleControlRequest(payload){
+    if (payload.action === 'pause') {
+      showToast('A outra pessoa pediu para pausar o filme.', 'Pausar agora', () => player.pause());
+    } else {
+      showToast('A outra pessoa pediu para continuar o filme.', 'Play agora', () => player.play().catch(()=>{}));
+    }
   }
 
   // ---------- segmented controls ----------
@@ -366,6 +441,7 @@
     channel.on('broadcast', { event: 'webrtc-answer' }, (msg) => { if (currentMode === 'stream' && currentRole === 'host') handleAnswerAsHost(msg.payload); });
     channel.on('broadcast', { event: 'webrtc-ice' }, (msg) => handleRemoteIce(msg.payload));
     channel.on('broadcast', { event: 'webrtc-request' }, () => { if (currentMode === 'stream' && currentRole === 'host') startHostOffer(); });
+    channel.on('broadcast', { event: 'control-request' }, (msg) => { if (currentMode === 'stream' && currentRole === 'host') handleControlRequest(msg.payload); });
 
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
