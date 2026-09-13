@@ -1,7 +1,7 @@
 (function(){
   // ======= PREENCHA AQUI COM SEUS DADOS DO SUPABASE =======
-  const SUPABASE_URL = "https://eogugfwxbqcydonhnmnd.supabase.co";
-  const SUPABASE_ANON_KEY = "sb_publishable_PvIiBvBCucOinjgC4biNlg_KBvjVOlS";
+  const SUPABASE_URL = "https://mlfjieimpqsevedqwzwv.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_pmoSc0nTDpPAr0kjy8Auyg_Epwplpzm";
   // ==========================================================S
   const ICE_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
