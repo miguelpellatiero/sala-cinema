@@ -99,8 +99,8 @@ h1 .dot{ color: var(--accent); }
 }
 .btn:hover{ transform: translateY(-1px); }
 .btn:disabled{ opacity: 0.45; cursor: not-allowed; transform: none; }
-.btn-primary{ background: var(--accent); color: #1a1305; }
-.btn-primary:hover{ background: #f5bd47; }
+.btn-primary{ background: var(--accent); color: #f5e6e9; }
+.btn-primary:hover{ background: #a53347; }
 .btn-ghost{ background: transparent; border-color: var(--border); color: var(--text-dim); }
 .btn-ghost:hover{ border-color: var(--accent-line); color: var(--text); }
 
@@ -322,6 +322,149 @@ h1 .dot{ color: var(--accent); }
   font-size: 11.5px;
   line-height: 1.5;
   color: var(--text-faint);
+}
+
+/* ---------- flyout largo (biblioteca) ---------- */
+.flyout-wide{ width: 340px; max-height: calc(100vh - 32px); overflow-y: auto; }
+
+.flyout-subtitle{
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.library-grid{
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.library-empty{
+  grid-column: 1 / -1;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  margin: 4px 0;
+}
+
+.movie-card{
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  aspect-ratio: 2 / 3;
+  display: flex;
+  align-items: flex-end;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.movie-card:hover{ border-color: var(--accent-line); transform: translateY(-1px); }
+.movie-card img{ position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.movie-card .movie-title{
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding: 18px 8px 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text);
+  background: linear-gradient(0deg, rgba(0,0,0,0.85), rgba(0,0,0,0));
+}
+.movie-card .movie-remove{
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(13,15,20,0.75);
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.movie-card .movie-remove:hover{ color: var(--accent); }
+
+.library-add{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-soft);
+}
+.library-add input[type="text"]{
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: inherit;
+  width: 100%;
+}
+.library-add input[type="text"]:focus{ outline: none; border-color: var(--accent-line); }
+.file-btn-sm{ padding: 9px 12px; font-size: 12px; flex: none; }
+
+.library-divider{ height: 1px; background: var(--border-soft); margin: 4px 0; }
+
+.shortcuts-list{ display: flex; flex-direction: column; gap: 6px; }
+.shortcut-link{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+.shortcut-link:hover{ color: var(--text); border-color: var(--accent-line); }
+.shortcut-link .shortcut-remove{
+  border: none; background: transparent; color: var(--text-faint); font-size: 11px; cursor: pointer;
+}
+.shortcut-link .shortcut-remove:hover{ color: var(--accent); }
+
+/* ---------- login: spinner + link de cadastro ---------- */
+.btn-spinner{
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(245,230,233,0.35);
+  border-top-color: #f5e6e9;
+  animation: spin .7s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+}
+@keyframes spin{ to{ transform: rotate(360deg); } }
+.link-btn{
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+  padding: 2px;
+  font-family: inherit;
+}
+.link-btn:hover{ color: var(--accent); }
+
+/* ---------- indicador de arrasto (mobile) ---------- */
+.swipe-edge{
+  display: none;
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 60px;
+  border-radius: 0 6px 6px 0;
+  background: rgba(255,255,255,0.10);
+  z-index: 6;
 }
 
 /* fio que conecta os dois — assinatura visual, mora dentro do flyout da sala */
@@ -563,6 +706,10 @@ video.no-interact{ pointer-events: none; }
 /* ---------- mobile: navbar vira uma bolha flutuante embaixo ---------- */
 @media (max-width: 640px){
   .app-screen{ flex-direction: column; }
+
+  .swipe-edge{ display: block; }
+
+  .flyout-wide{ width: auto; }
 
   .sidebar{
     position: fixed;

@@ -2,7 +2,8 @@
   // ======= PREENCHA AQUI COM SEUS DADOS DO SUPABASE =======
   const SUPABASE_URL = "https://mlfjieimpqsevedqwzwv.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_pmoSc0nTDpPAr0kjy8Auyg_Epwplpzm";
-  // ==========================================================S
+  // ==========================================================
+
   const ICE_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun.relay.metered.ca:80" },
@@ -45,6 +46,22 @@
   const accountEmail = document.getElementById('accountEmail');
   const btnLogout = document.getElementById('btnLogout');
   const flyoutBackdrop = document.getElementById('flyoutBackdrop');
+  const navCast = document.getElementById('navCast');
+  const swipeEdge = document.getElementById('swipeEdge');
+
+  const libraryGrid = document.getElementById('libraryGrid');
+  const libraryEmpty = document.getElementById('libraryEmpty');
+  const libTitle = document.getElementById('libTitle');
+  const libVideoUrl = document.getElementById('libVideoUrl');
+  const libCoverFile = document.getElementById('libCoverFile');
+  const labelLibCover = document.getElementById('labelLibCover');
+  const libCoverUrl = document.getElementById('libCoverUrl');
+  const btnAddMovie = document.getElementById('btnAddMovie');
+  const libStatus = document.getElementById('libStatus');
+  const shortcutsList = document.getElementById('shortcutsList');
+  const shortcutLabel = document.getElementById('shortcutLabel');
+  const shortcutUrl = document.getElementById('shortcutUrl');
+  const btnAddShortcut = document.getElementById('btnAddShortcut');
 
   const loginScreen = document.getElementById('loginScreen');
   const appScreen = document.getElementById('appScreen');
@@ -52,6 +69,9 @@
   const loginPassword = document.getElementById('loginPassword');
   const btnLogin = document.getElementById('btnLogin');
   const loginError = document.getElementById('loginError');
+  const loginSpinner = document.getElementById('loginSpinner');
+  const toggleSignup = document.getElementById('toggleSignup');
+  const btnLoginLabel = btnLogin.querySelector('.btn-label');
 
   const myId = Math.random().toString(36).slice(2);
   let channel = null;
@@ -68,8 +88,8 @@
   let guestRetryTimer = null;
 
   // ---------- navegação lateral (flyouts) ----------
-  const panels = { room: document.getElementById('flyoutRoom'), mode: document.getElementById('flyoutMode'), load: document.getElementById('flyoutLoad'), account: document.getElementById('flyoutAccount') };
-  const navButtons = { room: document.getElementById('navRoom'), mode: document.getElementById('navMode'), load: document.getElementById('navLoad'), account: document.getElementById('navAccount') };
+  const panels = { room: document.getElementById('flyoutRoom'), mode: document.getElementById('flyoutMode'), load: document.getElementById('flyoutLoad'), account: document.getElementById('flyoutAccount'), library: document.getElementById('flyoutLibrary') };
+  const navButtons = { room: document.getElementById('navRoom'), mode: document.getElementById('navMode'), load: document.getElementById('navLoad'), account: document.getElementById('navAccount'), library: document.getElementById('navLibrary') };
   let openPanel = null;
 
   function closePanel(){
@@ -233,6 +253,22 @@
     accountEmail.textContent = email || '';
     updateModeHint();
     requestAnimationFrame(fitStage);
+    loadLibrary();
+    loadShortcuts();
+  }
+
+  let isSignupMode = false;
+  toggleSignup.addEventListener('click', () => {
+    isSignupMode = !isSignupMode;
+    btnLoginLabel.textContent = isSignupMode ? 'Criar conta' : 'Entrar';
+    toggleSignup.textContent = isSignupMode ? 'Já tem conta? Entrar' : 'Ainda não tem conta? Criar conta';
+    loginError.textContent = '';
+  });
+
+  function setLoginBusy(busy){
+    btnLogin.disabled = busy;
+    loginSpinner.classList.toggle('hidden', !busy);
+    btnLoginLabel.style.display = busy ? 'none' : 'inline';
   }
 
   async function tryLogin(){
@@ -244,12 +280,24 @@
       loginError.textContent = 'Faltou colocar a URL e a chave do Supabase no código.';
       return;
     }
-    btnLogin.disabled = true;
-    btnLogin.textContent = 'Entrando…';
-    const { data, error } = await getSupabase().auth.signInWithPassword({ email, password });
-    btnLogin.disabled = false;
-    btnLogin.textContent = 'Entrar';
-    if (error) { loginError.textContent = 'E-mail ou senha incorretos.'; return; }
+    setLoginBusy(true);
+    const client = getSupabase();
+    const { data, error } = isSignupMode
+      ? await client.auth.signUp({ email, password })
+      : await client.auth.signInWithPassword({ email, password });
+    setLoginBusy(false);
+
+    if (error) {
+      loginError.textContent = isSignupMode ? (error.message || 'Não foi possível criar a conta.') : 'E-mail ou senha incorretos.';
+      return;
+    }
+    if (isSignupMode && !data.session) {
+      loginError.textContent = 'Conta criada! Confirme o e-mail (ou desative essa exigência no Supabase) e faça login.';
+      isSignupMode = false;
+      btnLoginLabel.textContent = 'Entrar';
+      toggleSignup.textContent = 'Ainda não tem conta? Criar conta';
+      return;
+    }
     showApp(data.user ? data.user.email : email);
   }
 
@@ -271,18 +319,245 @@
     if (data && data.session) showApp(data.session.user.email);
   })();
 
+  // ======================================================================
+  // BIBLIOTECA DE FILMES
+  // Dados (título, link do vídeo, endereço da capa OU aviso de capa local)
+  // ficam no Supabase. Se a capa for um ARQUIVO escolhido do dispositivo,
+  // a imagem em si nunca vai pro banco — fica só neste navegador, guardada
+  // no IndexedDB. Só o texto do link é leve o bastante pra ir ao banco.
+  // ======================================================================
+
+  // ---------- IndexedDB: guarda as capas que vieram de arquivo local ----------
+  const COVER_DB_NAME = 'sala-cinema-covers';
+  let coverDbPromise = null;
+  function openCoverDb(){
+    if (coverDbPromise) return coverDbPromise;
+    coverDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(COVER_DB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore('covers'); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return coverDbPromise;
+  }
+  async function saveCoverLocal(movieId, dataUrl){
+    const db = await openCoverDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction('covers', 'readwrite');
+      tx.objectStore('covers').put(dataUrl, movieId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  }
+  async function getCoverLocal(movieId){
+    const db = await openCoverDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction('covers', 'readonly');
+      const req = tx.objectStore('covers').get(movieId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  }
+  async function deleteCoverLocal(movieId){
+    const db = await openCoverDb();
+    return new Promise((resolve) => {
+      const tx = db.transaction('covers', 'readwrite');
+      tx.objectStore('covers').delete(movieId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  }
+  function fileToDataUrl(file){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ---------- carregar / desenhar a biblioteca ----------
+  let pendingCoverFile = null;
+  libCoverFile.addEventListener('change', () => {
+    pendingCoverFile = libCoverFile.files[0] || null;
+    labelLibCover.textContent = pendingCoverFile ? (pendingCoverFile.name.length > 16 ? pendingCoverFile.name.slice(0,13) + '…' : pendingCoverFile.name) : 'Capa (arquivo)';
+    if (pendingCoverFile) libCoverUrl.value = '';
+  });
+  libCoverUrl.addEventListener('input', () => {
+    if (libCoverUrl.value.trim()) { pendingCoverFile = null; libCoverFile.value = ''; labelLibCover.textContent = 'Capa (arquivo)'; }
+  });
+
+  async function renderMovieCard(movie){
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+
+    let coverSrc = movie.cover_url || null;
+    if (!coverSrc) {
+      const local = await getCoverLocal(movie.id);
+      if (local) coverSrc = local;
+    }
+
+    card.innerHTML = `
+      ${coverSrc ? `<img src="${coverSrc}" alt="">` : ''}
+      <button class="movie-remove" type="button" aria-label="Remover">✕</button>
+      <span class="movie-title">${movie.title}</span>
+    `;
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.movie-remove')) return;
+      loadVideoFromSrc(movie.video_url, movie.title, movie.id);
+    });
+    card.querySelector('.movie-remove').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await getSupabase().from('movies').delete().eq('id', movie.id);
+      await deleteCoverLocal(movie.id);
+      loadLibrary();
+    });
+    return card;
+  }
+
+  async function loadLibrary(){
+    if (SUPABASE_URL.includes('SUA_URL')) return;
+    const { data, error } = await getSupabase().from('movies').select('*').order('created_at', { ascending: false });
+    libraryGrid.innerHTML = '';
+    if (error) {
+      libraryGrid.appendChild(libraryEmpty);
+      libraryEmpty.textContent = 'Não consegui carregar a biblioteca (crie a tabela "movies" no Supabase — veja as instruções).';
+      return;
+    }
+    if (!data || !data.length) {
+      libraryGrid.appendChild(libraryEmpty);
+      libraryEmpty.textContent = 'Nenhum filme na biblioteca ainda.';
+      return;
+    }
+    for (const movie of data) {
+      libraryGrid.appendChild(await renderMovieCard(movie));
+    }
+  }
+
+  btnAddMovie.addEventListener('click', async () => {
+    const title = libTitle.value.trim();
+    const videoUrl = libVideoUrl.value.trim();
+    if (!title || !videoUrl) { libStatus.textContent = 'Preencha o título e o link do filme.'; return; }
+
+    libStatus.textContent = 'Salvando…';
+    btnAddMovie.disabled = true;
+
+    const coverUrl = libCoverUrl.value.trim() || null;
+    const { data, error } = await getSupabase().from('movies').insert({ title, video_url: videoUrl, cover_url: coverUrl }).select().single();
+
+    btnAddMovie.disabled = false;
+
+    if (error) {
+      libStatus.textContent = 'Não consegui salvar (confira se a tabela "movies" existe no Supabase).';
+      return;
+    }
+    if (pendingCoverFile && data) {
+      const dataUrl = await fileToDataUrl(pendingCoverFile);
+      await saveCoverLocal(data.id, dataUrl);
+    }
+
+    libTitle.value = ''; libVideoUrl.value = ''; libCoverUrl.value = '';
+    pendingCoverFile = null; libCoverFile.value = ''; labelLibCover.textContent = 'Capa (arquivo)';
+    libStatus.textContent = 'Filme adicionado!';
+    setTimeout(() => { libStatus.textContent = ''; }, 2500);
+    loadLibrary();
+  });
+
+  // ---------- atalhos (links editáveis, ex.: páginas do X/Twitter) ----------
+  async function loadShortcuts(){
+    if (SUPABASE_URL.includes('SUA_URL')) return;
+    const { data, error } = await getSupabase().from('shortcuts').select('*').order('created_at', { ascending: true });
+    shortcutsList.innerHTML = '';
+    if (error || !data) return;
+    data.forEach(sc => {
+      const a = document.createElement('a');
+      a.className = 'shortcut-link';
+      a.href = sc.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.innerHTML = `<span>${sc.label}</span><button class="shortcut-remove" type="button" aria-label="Remover">✕</button>`;
+      a.querySelector('.shortcut-remove').addEventListener('click', async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        await getSupabase().from('shortcuts').delete().eq('id', sc.id);
+        loadShortcuts();
+      });
+      shortcutsList.appendChild(a);
+    });
+  }
+
+  btnAddShortcut.addEventListener('click', async () => {
+    const label = shortcutLabel.value.trim();
+    const url = shortcutUrl.value.trim();
+    if (!label || !url) return;
+    await getSupabase().from('shortcuts').insert({ label, url });
+    shortcutLabel.value = ''; shortcutUrl.value = '';
+    loadShortcuts();
+  });
+
+  // ---------- transmitir para TV (Remote Playback API — sem SDK externo) ----------
+  navCast.addEventListener('click', async () => {
+    if (player.src && player.src.startsWith('blob:')) {
+      showToast('Pra transmitir pra TV, carregue o filme por um link direto (não um arquivo local).', 'Entendi', () => {});
+      return;
+    }
+    if (player.remote && typeof player.remote.prompt === 'function') {
+      try { await player.remote.prompt(); }
+      catch(e) { /* usuário cancelou, ou nenhum dispositivo encontrado */ }
+    } else {
+      showToast('Esse navegador não suporta transmitir direto. Use o ícone de transmissão do próprio Chrome, ou AirPlay no Safari.', 'Entendi', () => {});
+    }
+  });
+
+  // ---------- retomar de onde parou (localStorage, sobrevive a atualização/queda de conexão) ----------
+  function resumeKeyFor(src){
+    return 'resume:' + btoa(unescape(encodeURIComponent(src))).slice(0, 120);
+  }
+  let currentResumeKey = null;
+  player.addEventListener('loadedmetadata', () => {
+    if (!currentResumeKey) return;
+    const saved = parseFloat(localStorage.getItem(currentResumeKey));
+    if (saved && saved > 5 && saved < player.duration - 8) {
+      player.currentTime = saved;
+    }
+  });
+  setInterval(() => {
+    if (!currentResumeKey || player.paused || !player.src) return;
+    localStorage.setItem(currentResumeKey, String(player.currentTime));
+  }, 5000);
+  player.addEventListener('pause', () => {
+    if (currentResumeKey && player.src) localStorage.setItem(currentResumeKey, String(player.currentTime));
+  });
+
+  // ---------- gesto de arrastar (só no mobile): arrasta da borda esquerda pra direita, abre a biblioteca ----------
+  let touchStartX = null, touchStartY = null;
+  document.addEventListener('touchstart', (e) => {
+    if (window.innerWidth > 640) return;
+    const t = e.touches[0];
+    if (t.clientX > 28) { touchStartX = null; return; } // só conta perto da borda
+    touchStartX = t.clientX; touchStartY = t.clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (touchStartX === null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = Math.abs(t.clientY - touchStartY);
+    if (dx > 70 && dy < 60) togglePanel('library');
+    touchStartX = null;
+  }, { passive: true });
+
+  // ---------- fecha os painéis se clicar fora, exceto o próprio dropdown de sala já cuida disso ----------
+
   // ---------- carregar vídeo ----------
   function setStatus(state, text){
     statusDot.className = 'side-dot' + (state ? ' ' + state : '');
     statusText.textContent = text;
   }
 
-  function loadVideoFromSrc(src, label){
+  function loadVideoFromSrc(src, label, movieId){
     player.src = src;
     player.style.display = 'block';
     placeholder.style.display = 'none';
     metaInfo.textContent = 'Filme: ' + label;
     closePanel();
+    currentResumeKey = resumeKeyFor(movieId ? 'movie:' + movieId : src);
   }
 
   player.addEventListener('loadedmetadata', () => {
@@ -363,8 +638,19 @@
     pendingIceQueue = [];
     if (pc) pc.close();
     pc = newPeerConnection();
-    const stream = player.captureStream ? player.captureStream() : player.mozCaptureStream();
+    const stream = player.captureStream ? player.captureStream(30) : player.mozCaptureStream();
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+    // força qualidade alta: sem isso, o WebRTC reduz bitrate/resolução sozinho de forma bem agressiva
+    const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+    if (videoSender) {
+      const params = videoSender.getParameters();
+      if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+      params.encodings[0].maxBitrate = 8_000_000; // 8 Mbps
+      params.degradationPreference = 'maintain-resolution'; // prefere perder quadros a perder nitidez
+      try { await videoSender.setParameters(params); } catch(e) {}
+    }
+
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     channel.send({ type: 'broadcast', event: 'webrtc-offer', payload: { from: myId, sdp: offer } });
