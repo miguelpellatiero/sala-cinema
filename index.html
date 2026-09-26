@@ -151,35 +151,57 @@
     <button class="btn btn-ghost" id="btnLogout">Sair</button>
   </div>
 
-  <div class="flyout flyout-wide" id="flyoutLibrary">
-    <span class="flyout-title">Biblioteca</span>
-
-    <div class="library-grid" id="libraryGrid">
-      <p class="library-empty" id="libraryEmpty">Nenhum filme na biblioteca ainda.</p>
+  <div class="flyout library-modal" id="flyoutLibrary">
+    <div class="modal-header">
+      <span class="flyout-title">Biblioteca</span>
+      <button class="modal-close" id="closeLibrary" type="button" aria-label="Fechar">✕</button>
     </div>
 
-    <div class="library-add">
-      <input type="text" id="libTitle" placeholder="Título do filme">
-      <input type="text" id="libVideoUrl" placeholder="Link direto do filme (.mp4)">
-      <div class="flyout-row">
-        <label class="file-btn file-btn-sm" id="btnLibCoverFile">
-          <span id="labelLibCover">Capa (arquivo)</span>
-          <input type="file" id="libCoverFile" accept="image/*">
-        </label>
-        <input type="text" id="libCoverUrl" placeholder="ou link da capa">
+    <div class="modal-columns">
+      <div class="modal-col">
+        <div class="flyout-header-row">
+          <span class="flyout-subtitle">Filmes</span>
+        </div>
+        <div class="library-scroll">
+          <div class="library-grid" id="libraryGrid">
+            <p class="library-empty" id="libraryEmpty">Nenhum filme na biblioteca ainda.</p>
+          </div>
+
+          <button class="add-toggle" id="toggleAddMovie" type="button">
+            <span>+ Adicionar filme</span>
+          </button>
+          <div class="library-add hidden" id="libraryAddForm">
+            <input type="text" id="libTitle" placeholder="Título do filme">
+            <input type="text" id="libVideoUrl" placeholder="Link direto do filme (.mp4)">
+            <div class="flyout-row">
+              <label class="file-btn file-btn-sm" id="btnLibCoverFile">
+                <span id="labelLibCover">Capa (arquivo)</span>
+                <input type="file" id="libCoverFile" accept="image/*">
+              </label>
+              <input type="text" id="libCoverUrl" placeholder="ou link da capa">
+            </div>
+            <button class="btn btn-primary" id="btnAddMovie">Adicionar à biblioteca</button>
+            <p class="flyout-hint" id="libStatus"></p>
+          </div>
+        </div>
       </div>
-      <button class="btn btn-primary" id="btnAddMovie">Adicionar à biblioteca</button>
-      <p class="flyout-hint" id="libStatus"></p>
-    </div>
 
-    <div class="library-divider"></div>
+      <div class="modal-col-divider"></div>
 
-    <span class="flyout-subtitle">Atalhos (X / Twitter)</span>
-    <div class="shortcuts-list" id="shortcutsList"></div>
-    <div class="flyout-row">
-      <input type="text" id="shortcutLabel" placeholder="Nome">
-      <input type="text" id="shortcutUrl" placeholder="Link do X">
-      <button class="btn btn-ghost" id="btnAddShortcut">+</button>
+      <div class="modal-col modal-col-narrow">
+        <div class="flyout-header-row">
+          <span class="flyout-subtitle">Atalhos</span>
+          <button class="add-toggle add-toggle-sm" id="toggleAddShortcut" type="button">+ Novo</button>
+        </div>
+        <div class="library-scroll">
+          <div class="shortcuts-chips" id="shortcutsList"></div>
+          <div class="flyout-row hidden" id="shortcutAddForm">
+            <input type="text" id="shortcutLabel" placeholder="Nome">
+            <input type="text" id="shortcutUrl" placeholder="Link">
+            <button class="btn btn-ghost" id="btnAddShortcut">Salvar</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

@@ -11,7 +11,7 @@
     { urls: "turn:global.relay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
     { urls: "turn:global.relay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }
   ];
-
+ 
   const player = document.getElementById('player');
   const placeholder = document.getElementById('placeholder');
   const inputVideo = document.getElementById('inputVideo');
@@ -48,7 +48,7 @@
   const flyoutBackdrop = document.getElementById('flyoutBackdrop');
   const navCast = document.getElementById('navCast');
   const swipeEdge = document.getElementById('swipeEdge');
-
+ 
   const libraryGrid = document.getElementById('libraryGrid');
   const libraryEmpty = document.getElementById('libraryEmpty');
   const libTitle = document.getElementById('libTitle');
@@ -62,7 +62,20 @@
   const shortcutLabel = document.getElementById('shortcutLabel');
   const shortcutUrl = document.getElementById('shortcutUrl');
   const btnAddShortcut = document.getElementById('btnAddShortcut');
-
+  const toggleAddMovie = document.getElementById('toggleAddMovie');
+  const libraryAddForm = document.getElementById('libraryAddForm');
+  const toggleAddShortcut = document.getElementById('toggleAddShortcut');
+  const shortcutAddForm = document.getElementById('shortcutAddForm');
+ 
+  toggleAddMovie.addEventListener('click', () => {
+    const open = libraryAddForm.classList.toggle('hidden') === false;
+    toggleAddMovie.classList.toggle('active', open);
+    toggleAddMovie.querySelector('span').textContent = open ? '– Fechar' : '+ Adicionar filme';
+  });
+  toggleAddShortcut.addEventListener('click', () => {
+    shortcutAddForm.classList.toggle('hidden');
+  });
+ 
   const loginScreen = document.getElementById('loginScreen');
   const appScreen = document.getElementById('appScreen');
   const loginEmail = document.getElementById('loginEmail');
@@ -72,13 +85,13 @@
   const loginSpinner = document.getElementById('loginSpinner');
   const toggleSignup = document.getElementById('toggleSignup');
   const btnLoginLabel = btnLogin.querySelector('.btn-label');
-
+ 
   const myId = Math.random().toString(36).slice(2);
   let channel = null;
   let suppressEvents = false;
   let otherPresent = false;
   let supabase = null;
-
+ 
   let currentMode = 'each';
   let currentRole = 'host';
   let pc = null;
@@ -86,12 +99,12 @@
   let pendingIceQueue = [];
   let remoteDescSet = false;
   let guestRetryTimer = null;
-
+ 
   // ---------- navegação lateral (flyouts) ----------
   const panels = { room: document.getElementById('flyoutRoom'), mode: document.getElementById('flyoutMode'), load: document.getElementById('flyoutLoad'), account: document.getElementById('flyoutAccount'), library: document.getElementById('flyoutLibrary') };
   const navButtons = { room: document.getElementById('navRoom'), mode: document.getElementById('navMode'), load: document.getElementById('navLoad'), account: document.getElementById('navAccount'), library: document.getElementById('navLibrary') };
   let openPanel = null;
-
+ 
   function closePanel(){
     if (!openPanel) return;
     panels[openPanel].classList.remove('show');
@@ -111,8 +124,9 @@
     navButtons[name].addEventListener('click', () => togglePanel(name));
   });
   flyoutBackdrop.addEventListener('click', closePanel);
+  document.getElementById('closeLibrary').addEventListener('click', closePanel);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePanel(); });
-
+ 
   // ---------- ajustar o palco pra caber na tela sem gerar scroll ----------
   const videoStatusEl = document.getElementById('videoStatus');
   function fitStage(){
@@ -129,13 +143,13 @@
   window.addEventListener('resize', fitStage);
   new ResizeObserver(fitStage).observe(stageEl);
   new ResizeObserver(fitStage).observe(videoStatusEl);
-
+ 
   const MODE_HINTS = {
     each: 'Os dois precisam ter o mesmo filme salvo — só o play, a pausa e o tempo são sincronizados.',
     stream: 'Só quem tem o filme precisa do arquivo — o vídeo vai direto pro navegador do outro.'
   };
   function updateModeHint(){ modeHint.textContent = MODE_HINTS[currentMode]; }
-
+ 
   // ---------- travar controles de quem só recebe a transmissão ----------
   function applyControlLock(){
     const isLockedGuest = currentMode === 'stream' && currentRole === 'guest';
@@ -146,20 +160,20 @@
     btnFullscreen.classList.toggle('hidden', !isLockedGuest);
     guestRequests.classList.toggle('hidden', !isLockedGuest);
   }
-
+ 
   // ---------- tela cheia (só existe pra quem tem controles bloqueados) ----------
   const ICON_EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4H4v4"/><path d="M16 4h4v4"/><path d="M8 20H4v-4"/><path d="M16 20h4v-4"/></svg>';
   const ICON_SHRINK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h4V4"/><path d="M20 8h-4V4"/><path d="M4 16h4v4"/><path d="M20 16h-4v4"/></svg>';
-
+ 
   function isWrapFullscreen(){
     return document.fullscreenElement === videoWrap || document.webkitFullscreenElement === videoWrap;
   }
-
+ 
   function updateFullscreenIcon(){
     btnFullscreen.innerHTML = isWrapFullscreen() ? ICON_SHRINK : ICON_EXPAND;
     btnFullscreen.setAttribute('aria-label', isWrapFullscreen() ? 'Sair da tela cheia' : 'Tela cheia');
   }
-
+ 
   btnFullscreen.addEventListener('click', () => {
     if (isWrapFullscreen()) {
       const exit = document.exitFullscreen || document.webkitExitFullscreen;
@@ -169,24 +183,24 @@
       if (req) req.call(videoWrap);
     }
   });
-
+ 
   document.addEventListener('fullscreenchange', updateFullscreenIcon);
   document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
-
+ 
   // ---------- convidado pede pausa/play; anfitrião recebe notificação ----------
   function flashSent(btn){
     btn.classList.add('sent');
     setTimeout(() => btn.classList.remove('sent'), 1200);
   }
-
+ 
   function sendControlRequest(action){
     if (!channel) return;
     channel.send({ type: 'broadcast', event: 'control-request', payload: { from: myId, action } });
   }
-
+ 
   btnRequestPause.addEventListener('click', () => { sendControlRequest('pause'); flashSent(btnRequestPause); });
   btnRequestPlay.addEventListener('click', () => { sendControlRequest('play'); flashSent(btnRequestPlay); });
-
+ 
   let toastTimer = null;
   function showToast(message, actionLabel, actionFn){
     toastText.textContent = message;
@@ -201,7 +215,7 @@
     if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
   }
   toastDismiss.addEventListener('click', hideToast);
-
+ 
   function handleControlRequest(payload){
     if (payload.action === 'pause') {
       showToast('A outra pessoa pediu para pausar o filme.', 'Pausar agora', () => player.pause());
@@ -209,7 +223,7 @@
       showToast('A outra pessoa pediu para continuar o filme.', 'Play agora', () => player.play().catch(()=>{}));
     }
   }
-
+ 
   // ---------- segmented controls ----------
   function setSegmented(container, value){
     container.querySelectorAll('.segment').forEach(btn => btn.classList.toggle('active', btn.dataset.value === value));
@@ -232,7 +246,7 @@
     updateLoaderState();
     applyControlLock();
   });
-
+ 
   function updateLoaderState(){
     if (currentMode === 'stream' && currentRole === 'guest' && player.style.display !== 'block') {
       placeholder.querySelector('p').textContent = 'Aguardando a transmissão da outra pessoa…';
@@ -240,13 +254,13 @@
       placeholder.querySelector('p').textContent = 'Entre numa sala e carregue o filme pra começar.';
     }
   }
-
+ 
   // ---------- login ----------
   function getSupabase(){
     if (!supabase) supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     return supabase;
   }
-
+ 
   function showApp(email){
     loginScreen.classList.add('hidden');
     appScreen.classList.remove('hidden');
@@ -256,7 +270,7 @@
     loadLibrary();
     loadShortcuts();
   }
-
+ 
   let isSignupMode = false;
   toggleSignup.addEventListener('click', () => {
     isSignupMode = !isSignupMode;
@@ -264,13 +278,13 @@
     toggleSignup.textContent = isSignupMode ? 'Já tem conta? Entrar' : 'Ainda não tem conta? Criar conta';
     loginError.textContent = '';
   });
-
+ 
   function setLoginBusy(busy){
     btnLogin.disabled = busy;
     loginSpinner.classList.toggle('hidden', !busy);
     btnLoginLabel.style.display = busy ? 'none' : 'inline';
   }
-
+ 
   async function tryLogin(){
     loginError.textContent = '';
     const email = loginEmail.value.trim();
@@ -286,7 +300,7 @@
       ? await client.auth.signUp({ email, password })
       : await client.auth.signInWithPassword({ email, password });
     setLoginBusy(false);
-
+ 
     if (error) {
       loginError.textContent = isSignupMode ? (error.message || 'Não foi possível criar a conta.') : 'E-mail ou senha incorretos.';
       return;
@@ -300,10 +314,10 @@
     }
     showApp(data.user ? data.user.email : email);
   }
-
+ 
   btnLogin.addEventListener('click', tryLogin);
   loginPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryLogin(); });
-
+ 
   btnLogout.addEventListener('click', async () => {
     await getSupabase().auth.signOut();
     closePanel();
@@ -312,13 +326,13 @@
     loginEmail.value = '';
     loginPassword.value = '';
   });
-
+ 
   (async function checkExistingSession(){
     if (SUPABASE_URL.includes('SUA_URL') || SUPABASE_ANON_KEY.includes('SUA_CHAVE')) return;
     const { data } = await getSupabase().auth.getSession();
     if (data && data.session) showApp(data.session.user.email);
   })();
-
+ 
   // ======================================================================
   // BIBLIOTECA DE FILMES
   // Dados (título, link do vídeo, endereço da capa OU aviso de capa local)
@@ -326,7 +340,7 @@
   // a imagem em si nunca vai pro banco — fica só neste navegador, guardada
   // no IndexedDB. Só o texto do link é leve o bastante pra ir ao banco.
   // ======================================================================
-
+ 
   // ---------- IndexedDB: guarda as capas que vieram de arquivo local ----------
   const COVER_DB_NAME = 'sala-cinema-covers';
   let coverDbPromise = null;
@@ -375,7 +389,7 @@
       reader.readAsDataURL(file);
     });
   }
-
+ 
   // ---------- carregar / desenhar a biblioteca ----------
   let pendingCoverFile = null;
   libCoverFile.addEventListener('change', () => {
@@ -386,17 +400,17 @@
   libCoverUrl.addEventListener('input', () => {
     if (libCoverUrl.value.trim()) { pendingCoverFile = null; libCoverFile.value = ''; labelLibCover.textContent = 'Capa (arquivo)'; }
   });
-
+ 
   async function renderMovieCard(movie){
     const card = document.createElement('div');
     card.className = 'movie-card';
-
+ 
     let coverSrc = movie.cover_url || null;
     if (!coverSrc) {
       const local = await getCoverLocal(movie.id);
       if (local) coverSrc = local;
     }
-
+ 
     card.innerHTML = `
       ${coverSrc ? `<img src="${coverSrc}" alt="">` : ''}
       <button class="movie-remove" type="button" aria-label="Remover">✕</button>
@@ -414,7 +428,7 @@
     });
     return card;
   }
-
+ 
   async function loadLibrary(){
     if (SUPABASE_URL.includes('SUA_URL')) return;
     const { data, error } = await getSupabase().from('movies').select('*').order('created_at', { ascending: false });
@@ -433,20 +447,20 @@
       libraryGrid.appendChild(await renderMovieCard(movie));
     }
   }
-
+ 
   btnAddMovie.addEventListener('click', async () => {
     const title = libTitle.value.trim();
     const videoUrl = libVideoUrl.value.trim();
     if (!title || !videoUrl) { libStatus.textContent = 'Preencha o título e o link do filme.'; return; }
-
+ 
     libStatus.textContent = 'Salvando…';
     btnAddMovie.disabled = true;
-
+ 
     const coverUrl = libCoverUrl.value.trim() || null;
     const { data, error } = await getSupabase().from('movies').insert({ title, video_url: videoUrl, cover_url: coverUrl }).select().single();
-
+ 
     btnAddMovie.disabled = false;
-
+ 
     if (error) {
       libStatus.textContent = 'Não consegui salvar (confira se a tabela "movies" existe no Supabase).';
       return;
@@ -455,14 +469,19 @@
       const dataUrl = await fileToDataUrl(pendingCoverFile);
       await saveCoverLocal(data.id, dataUrl);
     }
-
+ 
     libTitle.value = ''; libVideoUrl.value = ''; libCoverUrl.value = '';
     pendingCoverFile = null; libCoverFile.value = ''; labelLibCover.textContent = 'Capa (arquivo)';
     libStatus.textContent = 'Filme adicionado!';
-    setTimeout(() => { libStatus.textContent = ''; }, 2500);
+    setTimeout(() => {
+      libStatus.textContent = '';
+      libraryAddForm.classList.add('hidden');
+      toggleAddMovie.classList.remove('active');
+      toggleAddMovie.querySelector('span').textContent = '+ Adicionar filme';
+    }, 900);
     loadLibrary();
   });
-
+ 
   // ---------- atalhos (links editáveis, ex.: páginas do X/Twitter) ----------
   async function loadShortcuts(){
     if (SUPABASE_URL.includes('SUA_URL')) return;
@@ -482,30 +501,43 @@
       shortcutsList.appendChild(a);
     });
   }
-
+ 
   btnAddShortcut.addEventListener('click', async () => {
     const label = shortcutLabel.value.trim();
     const url = shortcutUrl.value.trim();
     if (!label || !url) return;
     await getSupabase().from('shortcuts').insert({ label, url });
     shortcutLabel.value = ''; shortcutUrl.value = '';
+    shortcutAddForm.classList.add('hidden');
     loadShortcuts();
   });
-
+ 
   // ---------- transmitir para TV (Remote Playback API — sem SDK externo) ----------
   navCast.addEventListener('click', async () => {
+    if (!player.src && !player.currentSrc) {
+      showToast('Carregue um filme primeiro pra poder transmitir.', 'Entendi', () => {});
+      return;
+    }
     if (player.src && player.src.startsWith('blob:')) {
       showToast('Pra transmitir pra TV, carregue o filme por um link direto (não um arquivo local).', 'Entendi', () => {});
       return;
     }
-    if (player.remote && typeof player.remote.prompt === 'function') {
-      try { await player.remote.prompt(); }
-      catch(e) { /* usuário cancelou, ou nenhum dispositivo encontrado */ }
-    } else {
-      showToast('Esse navegador não suporta transmitir direto. Use o ícone de transmissão do próprio Chrome, ou AirPlay no Safari.', 'Entendi', () => {});
+    try {
+      if (player.remote && typeof player.remote.prompt === 'function') {
+        await player.remote.prompt();
+      } else if (typeof player.webkitShowPlaybackTargetPicker === 'function') {
+        player.webkitShowPlaybackTargetPicker(); // AirPlay no Safari
+      } else {
+        showToast('Esse navegador não suporta transmissão automática. No Chrome, use o ícone de transmitir da própria barra do navegador.', 'Entendi', () => {});
+      }
+    } catch (err) {
+      const msg = (err && err.name === 'NotFoundError')
+        ? 'Nenhuma TV encontrada na mesma rede Wi-Fi.'
+        : 'Não consegui transmitir (' + (err && err.message ? err.message : 'erro desconhecido') + ').';
+      showToast(msg, 'Entendi', () => {});
     }
   });
-
+ 
   // ---------- retomar de onde parou (localStorage, sobrevive a atualização/queda de conexão) ----------
   function resumeKeyFor(src){
     return 'resume:' + btoa(unescape(encodeURIComponent(src))).slice(0, 120);
@@ -525,13 +557,14 @@
   player.addEventListener('pause', () => {
     if (currentResumeKey && player.src) localStorage.setItem(currentResumeKey, String(player.currentTime));
   });
-
+ 
   // ---------- gesto de arrastar (só no mobile): arrasta da borda esquerda pra direita, abre a biblioteca ----------
   let touchStartX = null, touchStartY = null;
   document.addEventListener('touchstart', (e) => {
     if (window.innerWidth > 640) return;
+    if (document.querySelector('.flyout.show')) { touchStartX = null; return; } // painel já aberto: não interfere no toque/scroll dele
     const t = e.touches[0];
-    if (t.clientX > 28) { touchStartX = null; return; } // só conta perto da borda
+    if (t.clientX > 20) { touchStartX = null; return; } // só conta bem na borda
     touchStartX = t.clientX; touchStartY = t.clientY;
   }, { passive: true });
   document.addEventListener('touchend', (e) => {
@@ -542,15 +575,15 @@
     if (dx > 70 && dy < 60) togglePanel('library');
     touchStartX = null;
   }, { passive: true });
-
+ 
   // ---------- fecha os painéis se clicar fora, exceto o próprio dropdown de sala já cuida disso ----------
-
+ 
   // ---------- carregar vídeo ----------
   function setStatus(state, text){
     statusDot.className = 'side-dot' + (state ? ' ' + state : '');
     statusText.textContent = text;
   }
-
+ 
   function loadVideoFromSrc(src, label, movieId){
     player.src = src;
     player.style.display = 'block';
@@ -559,7 +592,7 @@
     closePanel();
     currentResumeKey = resumeKeyFor(movieId ? 'movie:' + movieId : src);
   }
-
+ 
   player.addEventListener('loadedmetadata', () => {
     if (currentMode === 'stream' && currentRole === 'host') {
       hostVideoReady = true;
@@ -567,7 +600,7 @@
       if (otherPresent) startHostOffer();
     }
   });
-
+ 
   inputVideo.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -575,13 +608,13 @@
     btnVideo.classList.add('loaded');
     labelVideo.textContent = file.name.length > 24 ? file.name.slice(0,21) + '…' : file.name;
   });
-
+ 
   btnLoadUrl.addEventListener('click', () => {
     const url = urlInput.value.trim();
     if (!url) return;
     loadVideoFromSrc(url, 'link direto');
   });
-
+ 
   // ---------- sincronização (modo "cada um com o arquivo") ----------
   function sendState(eventName, extra){
     if (!channel) return;
@@ -604,7 +637,7 @@
     driftInfo.textContent = diff > 1.2 ? 'ajustado (' + diff.toFixed(1) + 's)' : '';
     setTimeout(() => { suppressEvents = false; }, 300);
   }
-
+ 
   // ---------- WebRTC: transmissão ao vivo ----------
   function newPeerConnection(){
     const conn = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -622,7 +655,7 @@
     };
     return conn;
   }
-
+ 
   async function flushPendingIce(){
     if (!pc) return;
     while (pendingIceQueue.length) {
@@ -630,7 +663,7 @@
       try { await pc.addIceCandidate(candidate); } catch(e) {}
     }
   }
-
+ 
   async function startHostOffer(){
     if (!hostVideoReady || !channel) return;
     streamStatus.textContent = 'Conectando transmissão…';
@@ -640,7 +673,7 @@
     pc = newPeerConnection();
     const stream = player.captureStream ? player.captureStream(30) : player.mozCaptureStream();
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
+ 
     // força qualidade alta: sem isso, o WebRTC reduz bitrate/resolução sozinho de forma bem agressiva
     const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
     if (videoSender) {
@@ -650,12 +683,12 @@
       params.degradationPreference = 'maintain-resolution'; // prefere perder quadros a perder nitidez
       try { await videoSender.setParameters(params); } catch(e) {}
     }
-
+ 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     channel.send({ type: 'broadcast', event: 'webrtc-offer', payload: { from: myId, sdp: offer } });
   }
-
+ 
   async function handleOfferAsGuest(payload){
     stopGuestRetry();
     streamStatus.textContent = 'Recebendo transmissão…';
@@ -679,20 +712,20 @@
     await pc.setLocalDescription(answer);
     channel.send({ type: 'broadcast', event: 'webrtc-answer', payload: { from: myId, sdp: answer } });
   }
-
+ 
   async function handleAnswerAsHost(payload){
     if (!pc) return;
     await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
     remoteDescSet = true;
     await flushPendingIce();
   }
-
+ 
   async function handleRemoteIce(payload){
     if (!pc || payload.role === currentRole) return;
     if (remoteDescSet) { try { await pc.addIceCandidate(payload.candidate); } catch(e) {} }
     else pendingIceQueue.push(payload.candidate);
   }
-
+ 
   function requestOfferWithRetry(){
     stopGuestRetry();
     let attempts = 0;
@@ -708,7 +741,7 @@
     guestRetryTimer = setInterval(tryRequest, 4000);
   }
   function stopGuestRetry(){ if (guestRetryTimer) { clearInterval(guestRetryTimer); guestRetryTimer = null; } }
-
+ 
   // ---------- sala ----------
   btnJoin.addEventListener('click', () => {
     const code = roomCodeInput.value.trim().toLowerCase();
@@ -719,16 +752,16 @@
     }
     if (channel) channel.unsubscribe();
     stopGuestRetry();
-
+ 
     channel = getSupabase().channel('sala-' + code, { config: { broadcast: { self: false }, presence: { key: myId } } });
-
+ 
     channel.on('broadcast', { event: 'sync' }, (msg) => applyRemote(msg.payload));
     channel.on('broadcast', { event: 'webrtc-offer' }, (msg) => { if (currentMode === 'stream' && currentRole === 'guest') handleOfferAsGuest(msg.payload); });
     channel.on('broadcast', { event: 'webrtc-answer' }, (msg) => { if (currentMode === 'stream' && currentRole === 'host') handleAnswerAsHost(msg.payload); });
     channel.on('broadcast', { event: 'webrtc-ice' }, (msg) => handleRemoteIce(msg.payload));
     channel.on('broadcast', { event: 'webrtc-request' }, () => { if (currentMode === 'stream' && currentRole === 'host') startHostOffer(); });
     channel.on('broadcast', { event: 'control-request' }, (msg) => { if (currentMode === 'stream' && currentRole === 'host') handleControlRequest(msg.payload); });
-
+ 
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
       const count = Object.keys(state).length;
@@ -737,7 +770,7 @@
       nodeMe.classList.add('on');
       nodeOther.classList.toggle('on', otherPresent);
       threadLine.classList.toggle('on', otherPresent);
-
+ 
       if (otherPresent) {
         setStatus('connected', 'Sala "' + code + '" — os dois estão aqui');
         if (!wasPresent && currentMode === 'stream') {
@@ -748,7 +781,7 @@
         setStatus('waiting', 'Sala "' + code + '" — esperando a outra pessoa entrar');
       }
     });
-
+ 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
         nodeMe.classList.add('on');
@@ -757,8 +790,8 @@
         if (currentMode === 'each') sendState('request-sync');
       }
     });
-
+ 
     btnJoin.textContent = 'Trocar de sala';
   });
-
+ 
 })();
