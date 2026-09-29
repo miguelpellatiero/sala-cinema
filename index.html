@@ -19,30 +19,8 @@
   <span class="blob b4"></span>
 </div>
 
-<!-- ---------- login ---------- -->
-<div id="loginScreen" class="screen login-screen">
-  <div class="card login-card">
-    <span class="eyebrow">Assistir juntos</span>
-    <h1>Sala<span class="dot">.</span></h1>
-    <label class="field">
-      <span>E-mail</span>
-      <input type="email" id="loginEmail" autocomplete="username">
-    </label>
-    <label class="field">
-      <span>Senha</span>
-      <input type="password" id="loginPassword" autocomplete="current-password">
-    </label>
-    <button class="btn btn-primary" id="btnLogin">
-      <span class="btn-label">Entrar</span>
-      <span class="btn-spinner hidden" id="loginSpinner"></span>
-    </button>
-    <p class="login-error" id="loginError"></p>
-    <button class="link-btn" id="toggleSignup" type="button">Ainda não tem conta? Criar conta</button>
-  </div>
-</div>
-
 <!-- ---------- app ---------- -->
-<div id="appScreen" class="screen app-screen hidden">
+<div id="appScreen" class="screen app-screen">
 
   <div class="swipe-edge" id="swipeEdge" aria-hidden="true"></div>
 
@@ -92,14 +70,6 @@
         <span class="side-label">Transmitir p/ TV</span>
       </button>
     </div>
-
-    <div class="sidebar-divider"></div>
-    <div class="sidebar-spacer"></div>
-
-    <button class="side-btn account-btn" id="navAccount" data-panel="account" type="button" aria-label="Conta">
-      <span class="avatar-circle">S</span>
-      <span class="side-label">Conta</span>
-    </button>
   </nav>
 
   <!-- ---------- flyouts ---------- -->
@@ -143,12 +113,6 @@
       <button class="btn btn-ghost" id="btnLoadUrl">Carregar</button>
     </div>
     <p class="flyout-hint" id="metaInfo">Nenhum vídeo carregado</p>
-  </div>
-
-  <div class="flyout" id="flyoutAccount">
-    <span class="flyout-title">Conta</span>
-    <p class="flyout-hint" id="accountEmail"></p>
-    <button class="btn btn-ghost" id="btnLogout">Sair</button>
   </div>
 
   <div class="flyout library-modal" id="flyoutLibrary">

@@ -4,7 +4,6 @@
   const SUPABASE_ANON_KEY = "sb_publishable_pmoSc0nTDpPAr0kjy8Auyg_Epwplpzm";
   // ==========================================================
 
- 
   const ICE_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun.relay.metered.ca:80" },
@@ -49,8 +48,6 @@
   const modeHint = document.getElementById('modeHint');
   const stageEl = document.querySelector('.stage');
   const videoWrap = document.getElementById('videoWrap');
-  const accountEmail = document.getElementById('accountEmail');
-  const btnLogout = document.getElementById('btnLogout');
   const flyoutBackdrop = document.getElementById('flyoutBackdrop');
   const navCast = document.getElementById('navCast');
   const swipeEdge = document.getElementById('swipeEdge');
@@ -82,15 +79,7 @@
     shortcutAddForm.classList.toggle('hidden');
   });
  
-  const loginScreen = document.getElementById('loginScreen');
   const appScreen = document.getElementById('appScreen');
-  const loginEmail = document.getElementById('loginEmail');
-  const loginPassword = document.getElementById('loginPassword');
-  const btnLogin = document.getElementById('btnLogin');
-  const loginError = document.getElementById('loginError');
-  const loginSpinner = document.getElementById('loginSpinner');
-  const toggleSignup = document.getElementById('toggleSignup');
-  const btnLoginLabel = btnLogin.querySelector('.btn-label');
  
   const myId = Math.random().toString(36).slice(2);
   let channel = null;
@@ -107,8 +96,8 @@
   let guestRetryTimer = null;
  
   // ---------- navegação lateral (flyouts) ----------
-  const panels = { room: document.getElementById('flyoutRoom'), mode: document.getElementById('flyoutMode'), load: document.getElementById('flyoutLoad'), account: document.getElementById('flyoutAccount'), library: document.getElementById('flyoutLibrary') };
-  const navButtons = { room: document.getElementById('navRoom'), mode: document.getElementById('navMode'), load: document.getElementById('navLoad'), account: document.getElementById('navAccount'), library: document.getElementById('navLibrary') };
+  const panels = { room: document.getElementById('flyoutRoom'), mode: document.getElementById('flyoutMode'), load: document.getElementById('flyoutLoad'), library: document.getElementById('flyoutLibrary') };
+  const navButtons = { room: document.getElementById('navRoom'), mode: document.getElementById('navMode'), load: document.getElementById('navLoad'), library: document.getElementById('navLibrary') };
   let openPanel = null;
  
   function closePanel(){
@@ -305,82 +294,36 @@
     }
   }
  
-  // ---------- login ----------
+  // ---------- sessão automática e invisível (sem tela de login) ----------
+  // A Biblioteca/Atalhos usam o Supabase, e as regras de segurança exigem "usuário logado".
+  // Em vez de mostrar login pra vocês, o site entra sozinho com uma sessão anônima.
   function getSupabase(){
     if (!supabase) supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     return supabase;
   }
  
-  function showApp(email){
-    loginScreen.classList.add('hidden');
+  function showApp(){
     appScreen.classList.remove('hidden');
-    accountEmail.textContent = email || '';
     updateModeHint();
     requestAnimationFrame(fitStage);
     loadLibrary();
     loadShortcuts();
   }
  
-  let isSignupMode = false;
-  toggleSignup.addEventListener('click', () => {
-    isSignupMode = !isSignupMode;
-    btnLoginLabel.textContent = isSignupMode ? 'Criar conta' : 'Entrar';
-    toggleSignup.textContent = isSignupMode ? 'Já tem conta? Entrar' : 'Ainda não tem conta? Criar conta';
-    loginError.textContent = '';
-  });
- 
-  function setLoginBusy(busy){
-    btnLogin.disabled = busy;
-    loginSpinner.classList.toggle('hidden', !busy);
-    btnLoginLabel.style.display = busy ? 'none' : 'inline';
-  }
- 
-  async function tryLogin(){
-    loginError.textContent = '';
-    const email = loginEmail.value.trim();
-    const password = loginPassword.value;
-    if (!email || !password) { loginError.textContent = 'Preencha e-mail e senha.'; return; }
+  (async function ensureSession(){
     if (SUPABASE_URL.includes('SUA_URL') || SUPABASE_ANON_KEY.includes('SUA_CHAVE')) {
-      loginError.textContent = 'Faltou colocar a URL e a chave do Supabase no código.';
+      showApp(); // sem Supabase configurado ainda: mostra o app mesmo assim (Biblioteca/Atalhos não vão funcionar até configurar)
       return;
     }
-    setLoginBusy(true);
     const client = getSupabase();
-    const { data, error } = isSignupMode
-      ? await client.auth.signUp({ email, password })
-      : await client.auth.signInWithPassword({ email, password });
-    setLoginBusy(false);
- 
-    if (error) {
-      loginError.textContent = isSignupMode ? (error.message || 'Não foi possível criar a conta.') : 'E-mail ou senha incorretos.';
-      return;
+    const { data } = await client.auth.getSession();
+    if (!data || !data.session) {
+      const { error } = await client.auth.signInAnonymously();
+      if (error) {
+        streamStatus.textContent = 'Não consegui conectar ao Supabase — confira se o login anônimo está ativado.';
+      }
     }
-    if (isSignupMode && !data.session) {
-      loginError.textContent = 'Conta criada! Confirme o e-mail (ou desative essa exigência no Supabase) e faça login.';
-      isSignupMode = false;
-      btnLoginLabel.textContent = 'Entrar';
-      toggleSignup.textContent = 'Ainda não tem conta? Criar conta';
-      return;
-    }
-    showApp(data.user ? data.user.email : email);
-  }
- 
-  btnLogin.addEventListener('click', tryLogin);
-  loginPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryLogin(); });
- 
-  btnLogout.addEventListener('click', async () => {
-    await getSupabase().auth.signOut();
-    closePanel();
-    appScreen.classList.add('hidden');
-    loginScreen.classList.remove('hidden');
-    loginEmail.value = '';
-    loginPassword.value = '';
-  });
- 
-  (async function checkExistingSession(){
-    if (SUPABASE_URL.includes('SUA_URL') || SUPABASE_ANON_KEY.includes('SUA_CHAVE')) return;
-    const { data } = await getSupabase().auth.getSession();
-    if (data && data.session) showApp(data.session.user.email);
+    showApp();
   })();
  
   // ======================================================================
