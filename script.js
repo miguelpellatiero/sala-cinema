@@ -4,6 +4,7 @@
   const SUPABASE_ANON_KEY = "sb_publishable_pmoSc0nTDpPAr0kjy8Auyg_Epwplpzm";
   // ==========================================================
 
+ 
   const ICE_SERVERS = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun.relay.metered.ca:80" },
@@ -33,9 +34,14 @@
   const roleSegmented = document.getElementById('roleSegmented');
   const lockBadge = document.getElementById('lockBadge');
   const btnFullscreen = document.getElementById('btnFullscreen');
-  const guestRequests = document.getElementById('guestRequests');
-  const btnRequestPause = document.getElementById('btnRequestPause');
-  const btnRequestPlay = document.getElementById('btnRequestPlay');
+  const guestControls = document.getElementById('guestControls');
+  const gcPlayPause = document.getElementById('gcPlayPause');
+  const gcIconPlay = document.getElementById('gcIconPlay');
+  const gcIconPause = document.getElementById('gcIconPause');
+  const gcSeek = document.getElementById('gcSeek');
+  const gcTimeCurrent = document.getElementById('gcTimeCurrent');
+  const gcTimeTotal = document.getElementById('gcTimeTotal');
+  const gcVolume = document.getElementById('gcVolume');
   const toast = document.getElementById('toast');
   const toastText = document.getElementById('toastText');
   const toastAction = document.getElementById('toastAction');
@@ -150,7 +156,7 @@
   };
   function updateModeHint(){ modeHint.textContent = MODE_HINTS[currentMode]; }
  
-  // ---------- travar controles de quem só recebe a transmissão ----------
+  // ---------- travar controles nativos de quem só recebe a transmissão (troca pela barra própria) ----------
   function applyControlLock(){
     const isLockedGuest = currentMode === 'stream' && currentRole === 'guest';
     player.controls = !isLockedGuest;
@@ -158,7 +164,7 @@
     player.classList.toggle('no-interact', isLockedGuest);
     lockBadge.classList.toggle('hidden', !isLockedGuest);
     btnFullscreen.classList.toggle('hidden', !isLockedGuest);
-    guestRequests.classList.toggle('hidden', !isLockedGuest);
+    guestControls.classList.toggle('hidden', !isLockedGuest);
   }
  
   // ---------- tela cheia (só existe pra quem tem controles bloqueados) ----------
@@ -187,20 +193,6 @@
   document.addEventListener('fullscreenchange', updateFullscreenIcon);
   document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
  
-  // ---------- convidado pede pausa/play; anfitrião recebe notificação ----------
-  function flashSent(btn){
-    btn.classList.add('sent');
-    setTimeout(() => btn.classList.remove('sent'), 1200);
-  }
- 
-  function sendControlRequest(action){
-    if (!channel) return;
-    channel.send({ type: 'broadcast', event: 'control-request', payload: { from: myId, action } });
-  }
- 
-  btnRequestPause.addEventListener('click', () => { sendControlRequest('pause'); flashSent(btnRequestPause); });
-  btnRequestPlay.addEventListener('click', () => { sendControlRequest('play'); flashSent(btnRequestPlay); });
- 
   let toastTimer = null;
   function showToast(message, actionLabel, actionFn){
     toastText.textContent = message;
@@ -216,13 +208,71 @@
   }
   toastDismiss.addEventListener('click', hideToast);
  
-  function handleControlRequest(payload){
-    if (payload.action === 'pause') {
-      showToast('A outra pessoa pediu para pausar o filme.', 'Pausar agora', () => player.pause());
-    } else {
-      showToast('A outra pessoa pediu para continuar o filme.', 'Play agora', () => player.play().catch(()=>{}));
+  // ---------- controle direto de quem recebe: pausar, adiantar/voltar e volume ----------
+  function formatTime(s){
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return m + ':' + String(sec).padStart(2, '0');
+  }
+ 
+  // -- lado de quem TEM o filme: avisa o estado atual pro outro lado --
+  function broadcastStreamState(action){
+    if (!channel || currentMode !== 'stream' || currentRole !== 'host') return;
+    channel.send({
+      type: 'broadcast', event: 'stream-state',
+      payload: { time: player.currentTime || 0, duration: player.duration || 0, playing: !player.paused, action: action || 'tick' }
+    });
+  }
+  player.addEventListener('play', () => broadcastStreamState('play'));
+  player.addEventListener('pause', () => broadcastStreamState('pause'));
+  player.addEventListener('seeked', () => broadcastStreamState('seek'));
+  setInterval(() => broadcastStreamState('tick'), 2000);
+ 
+  function handleStreamControl(payload){
+    if (currentMode !== 'stream' || currentRole !== 'host') return;
+    if (payload.action === 'play') player.play().catch(()=>{});
+    else if (payload.action === 'pause') player.pause();
+    else if (payload.action === 'seek' && typeof payload.time === 'number') player.currentTime = payload.time;
+  }
+ 
+  // -- lado de quem RECEBE: mostra o estado e manda comandos --
+  let guestKnownPlaying = false;
+  let isDraggingSeek = false;
+ 
+  function applyStreamStateToUI(payload){
+    if (currentMode !== 'stream' || currentRole !== 'guest') return;
+    guestKnownPlaying = payload.playing;
+    gcIconPlay.classList.toggle('hidden', payload.playing);
+    gcIconPause.classList.toggle('hidden', !payload.playing);
+    gcTimeTotal.textContent = formatTime(payload.duration);
+    if (!isDraggingSeek) {
+      gcSeek.max = payload.duration || 0;
+      gcSeek.value = payload.time || 0;
+      gcTimeCurrent.textContent = formatTime(payload.time);
     }
   }
+ 
+  function sendStreamControl(action, extra){
+    if (!channel) return;
+    channel.send({ type: 'broadcast', event: 'stream-control', payload: Object.assign({ from: myId, action }, extra || {}) });
+  }
+ 
+  gcPlayPause.addEventListener('click', () => {
+    sendStreamControl(guestKnownPlaying ? 'pause' : 'play');
+    guestKnownPlaying = !guestKnownPlaying;
+    gcIconPlay.classList.toggle('hidden', guestKnownPlaying);
+    gcIconPause.classList.toggle('hidden', !guestKnownPlaying);
+  });
+ 
+  gcSeek.addEventListener('pointerdown', () => { isDraggingSeek = true; });
+  gcSeek.addEventListener('input', () => { gcTimeCurrent.textContent = formatTime(parseFloat(gcSeek.value)); });
+  gcSeek.addEventListener('change', () => {
+    sendStreamControl('seek', { time: parseFloat(gcSeek.value) });
+    isDraggingSeek = false;
+  });
+ 
+  gcVolume.addEventListener('input', () => { player.volume = parseFloat(gcVolume.value); });
  
   // ---------- segmented controls ----------
   function setSegmented(container, value){
@@ -596,14 +646,26 @@
   player.addEventListener('loadedmetadata', () => {
     if (currentMode === 'stream' && currentRole === 'host') {
       hostVideoReady = true;
-      player.play().catch(()=>{});
-      if (otherPresent) startHostOffer();
+      player.muted = false; // garante que a captura não pegue um vídeo mudo por engano
+      const beginStream = () => { if (otherPresent) startHostOffer(); };
+      player.play().then(() => {
+        // espera o evento "playing" (frames e áudio já fluindo de verdade) antes de capturar
+        if (!player.paused && player.currentTime > 0) beginStream();
+        else player.addEventListener('playing', beginStream, { once: true });
+      }).catch(() => {
+        streamStatus.textContent = 'Toque no vídeo pra iniciar a reprodução e a transmissão';
+        player.addEventListener('playing', beginStream, { once: true });
+      });
     }
   });
+ 
+  let currentLocalFile = null;
+  let tempCastPath = null; // caminho no Supabase Storage, enquanto o arquivo estiver hospedado temporariamente
  
   inputVideo.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    currentLocalFile = file;
     loadVideoFromSrc(URL.createObjectURL(file), file.name);
     btnVideo.classList.add('loaded');
     labelVideo.textContent = file.name.length > 24 ? file.name.slice(0,21) + '…' : file.name;
@@ -671,8 +733,13 @@
     pendingIceQueue = [];
     if (pc) pc.close();
     pc = newPeerConnection();
+    player.muted = false; // segurança extra: nunca capturar com o vídeo mudo
     const stream = player.captureStream ? player.captureStream(30) : player.mozCaptureStream();
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
+ 
+    if (stream.getAudioTracks().length === 0) {
+      streamStatus.textContent = 'Atenção: não encontrei áudio nesse vídeo pra transmitir.';
+    }
  
     // força qualidade alta: sem isso, o WebRTC reduz bitrate/resolução sozinho de forma bem agressiva
     const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
@@ -760,7 +827,9 @@
     channel.on('broadcast', { event: 'webrtc-answer' }, (msg) => { if (currentMode === 'stream' && currentRole === 'host') handleAnswerAsHost(msg.payload); });
     channel.on('broadcast', { event: 'webrtc-ice' }, (msg) => handleRemoteIce(msg.payload));
     channel.on('broadcast', { event: 'webrtc-request' }, () => { if (currentMode === 'stream' && currentRole === 'host') startHostOffer(); });
-    channel.on('broadcast', { event: 'control-request' }, (msg) => { if (currentMode === 'stream' && currentRole === 'host') handleControlRequest(msg.payload); });
+    channel.on('broadcast', { event: 'control-request' }, () => {}); // compatibilidade com versões antigas do site, sem efeito
+    channel.on('broadcast', { event: 'stream-state' }, (msg) => applyStreamStateToUI(msg.payload));
+    channel.on('broadcast', { event: 'stream-control' }, (msg) => handleStreamControl(msg.payload));
  
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState();
@@ -774,7 +843,7 @@
       if (otherPresent) {
         setStatus('connected', 'Sala "' + code + '" — os dois estão aqui');
         if (!wasPresent && currentMode === 'stream') {
-          if (currentRole === 'host' && hostVideoReady) startHostOffer();
+          if (currentRole === 'host' && hostVideoReady) { startHostOffer(); broadcastStreamState('tick'); }
           if (currentRole === 'guest') requestOfferWithRetry();
         }
       } else {
@@ -795,3 +864,4 @@
   });
  
 })();
+ 

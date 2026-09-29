@@ -701,8 +701,8 @@ video.no-interact{ pointer-events: none; }
 
 .fullscreen-btn{
   position: absolute;
-  bottom: 14px;
-  right: 14px;
+  top: 14px;
+  left: 14px;
   width: 38px;
   height: 38px;
   border-radius: 50%;
@@ -719,30 +719,51 @@ video.no-interact{ pointer-events: none; }
 .fullscreen-btn svg{ width: 18px; height: 18px; }
 .fullscreen-btn:hover{ background: rgba(13,15,20,0.9); transform: scale(1.05); }
 
-.guest-requests{
+.guest-controls{
   position: absolute;
-  bottom: 14px;
-  right: 62px;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
   display: flex;
-  gap: 8px;
-}
-.request-btn{
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: rgba(13,15,20,0.72);
-  backdrop-filter: blur(6px);
+  align-items: center;
+  gap: 10px;
+  background: rgba(13,15,20,0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 8px 12px;
+}
+.gc-btn{
+  flex: none;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
   color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background .15s ease, transform .15s ease, border-color .15s ease;
 }
-.request-btn svg{ width: 16px; height: 16px; }
-.request-btn:hover{ background: rgba(13,15,20,0.9); border-color: var(--accent-line); transform: scale(1.05); }
-.request-btn.sent{ border-color: var(--accent-line); color: var(--accent); }
+.gc-btn svg{ width: 18px; height: 18px; }
+.gc-btn:hover{ color: var(--accent); }
+.gc-time{
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  min-width: 34px;
+  text-align: center;
+}
+.gc-seek{ flex: 1 1 auto; min-width: 40px; accent-color: var(--accent); cursor: pointer; }
+.gc-volume{ display: flex; align-items: center; gap: 6px; flex: none; }
+.gc-volume svg{ width: 15px; height: 15px; color: var(--text-dim); flex: none; }
+.gc-volume input[type="range"]{ width: 64px; accent-color: var(--accent); cursor: pointer; }
+
+@media (max-width: 480px){
+  .gc-volume{ display: none; }
+}
 
 .toast{
   position: fixed;
